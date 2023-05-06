@@ -522,6 +522,10 @@ class GrpcHandler:
         return self._execute_search_requests(requests, timeout, round_decimal=round_decimal, auto_id=auto_id, **kwargs)
 
     @retry_on_rpc_failure()
+    def iterator(self, collection_name, data, anns_field):
+
+
+    @retry_on_rpc_failure()
     def get_query_segment_info(self, collection_name, timeout=30, **kwargs):
         req = Prepare.get_query_segment_info_request(collection_name)
         future = self._stub.GetQuerySegmentInfo.future(req, timeout=timeout)
