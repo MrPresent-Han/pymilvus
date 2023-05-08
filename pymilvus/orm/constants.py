@@ -23,3 +23,7 @@ CALC_DIST_HAMMING = "HAMMING"
 CALC_DIST_TANIMOTO = "TANIMOTO"
 CALC_DIST_SQRT = "sqrt"
 CALC_DIST_DIM = "dim"
+
+OFFSET = "offset"
+LIMIT = "limit"
+ID = "id"

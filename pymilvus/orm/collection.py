@@ -43,7 +43,7 @@ from .utility import _get_connection
 from ..settings import Config
 from ..client.types import CompactionState, CompactionPlans, Replica, get_consistency_level, cmp_consistency_level
 from ..client.constants import DEFAULT_CONSISTENCY_LEVEL
-from .iterator import Iterator, QueryIterator, SearchIterator
+from .iterator import QueryIterator, SearchIterator
 
 
 class Collection:
@@ -755,7 +755,7 @@ class Collection:
         if not isinstance(expr, str):
             raise DataTypeNotMatchException(message=ExceptionsMessage.ExprType % type(expr))
         conn = self._get_connection()
-        iterator = QueryIterator(self._name, conn, expr, output_fields, partition_names,
+        iterator = QueryIterator(conn, self._name, expr, output_fields, partition_names,
                                  timeout=timeout, schema=self._schema_dict, **kwargs)
         return iterator
 
