@@ -1,4 +1,5 @@
-from .constants import OFFSET, LIMIT, ID
+from .constants import OFFSET, LIMIT, ID, FIELDS
+from .types import DataType
 
 
 class QueryIterator:
@@ -13,37 +14,55 @@ class QueryIterator:
         self._schema = schema
         self._timeout = timeout
         self._kwargs = kwargs
+        self.__setup__pk_is_str()
         self.__seek()
-        pass
 
     def __seek(self):
         if self._kwargs.get(OFFSET, 0) == 0:
-            # hc-- what if id can be less than 0?
-            self._next_id = -1
+            self._next_id = None
             return
 
         first_cursor_kwargs = self._kwargs.copy()
         first_cursor_kwargs[OFFSET] = 0
-        # hc--may be offset too large
+        # offset may be too large
         first_cursor_kwargs[LIMIT] = self._kwargs[OFFSET]
 
         res = self._conn.query(self._collection_name, self._expr, self._output_fields, self._partition_names,
-                              timeout=self._timeout, **first_cursor_kwargs)
+                               timeout=self._timeout, **first_cursor_kwargs)
         self.__set_cursor(res)
         self._kwargs[OFFSET] = 0
 
     def next(self):
-        current_expr = self._expr + f" and id > {self._next_id}"
-        print(f"current_expr:{current_expr}")
+        current_expr = self.__setup_next_expr()
         res = self._conn.query(self._collection_name, current_expr, self._output_fields, self._partition_names,
-                              timeout=self._timeout, **self._kwargs)
-        self.__set_cursor(res)
+                               timeout=self._timeout, **self._kwargs)
+        self.__update_cursor(res)
         return res
 
-    def __set_cursor(self, res):
+    def __setup__pk_is_str(self):
+        fields = self._schema[FIELDS]
+        for field in fields:
+            if field['is_primary']:
+                if field['type'] == DataType.VARCHAR:
+                    self._pk_str = True
+                else:
+                    self._pk_str = False
+                break
+
+    def __setup_next_expr(self):
+        current_expr = self._expr
+        if self._next_id is None:
+            return current_expr
+        if self._next_id is not None:
+            if self._pk_str:
+                current_expr = self._expr + f" and id > \"{self._next_id}\""
+            else:
+                current_expr = self._expr + f" and id > {self._next_id}"
+        return current_expr
+
+    def __update_cursor(self, res):
         if len(res) == 0:
             return
-        # hc--what about pk is varchar?
         self._next_id = res[-1][ID]
 
     def close(self):

@@ -27,3 +27,5 @@ CALC_DIST_DIM = "dim"
 OFFSET = "offset"
 LIMIT = "limit"
 ID = "id"
+
+FIELDS = "fields"
