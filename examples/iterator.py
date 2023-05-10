@@ -1,4 +1,5 @@
 import numpy as np
+
 from pymilvus import (
     connections,
     utility,
@@ -71,10 +72,11 @@ def prepare_data():
     prepare_index(collection)
     return collection
 
+
 def query_iterate_collection(collection):
     expr = f"{AGE} >= 10"
     query_iterator = collection.query_iterator(expr=expr, output_fields=[USER_ID, AGE],
-                                                 offset=0, limit=10, consistency_level=CONSISTENCY_LEVEL)
+                                               offset=0, limit=10, consistency_level=CONSISTENCY_LEVEL)
     id_set = set()
     target_id_count = 2700
     while True:
@@ -91,9 +93,31 @@ def query_iterate_collection(collection):
             id_set.add(res[i]['id'])
 
 
+def search_iterator_collection(collection):
+    SEARCH_NQ = 1
+    DIM = 8
+    rng = np.random.default_rng(seed=19530)
+    vectors_to_search = rng.random((SEARCH_NQ, DIM))
+    search_params = {
+        "metric_type": "L2",
+        "params": {"nprobe": 10, "radius": 1.0, "range_filter": 20},
+    }
+    search_iterator = collection.search_iterator(vectors_to_search, PICTURE, search_params, limit=10,
+                                                 output_fields=[USER_ID])
+    while True:
+        res = search_iterator.next()
+        if len(res[0]) == 0:
+            print("query iteration finished, close")
+            search_iterator.close()
+            break
+        for i in range(len(res[0])):
+            print(res[0][i])
+        print("-------------------------")
+
 def main():
     collection = prepare_data()
-    query_iterate_collection(collection)
+    # query_iterate_collection(collection)
+    search_iterator_collection(collection)
 
 
 if __name__ == '__main__':

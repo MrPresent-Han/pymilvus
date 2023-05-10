@@ -1,5 +1,8 @@
-from .constants import OFFSET, LIMIT, ID, FIELDS
+from .constants import OFFSET, LIMIT, ID, FIELDS, DISTANCE, RANGE_FILTER, RADIUS, PARAMS
 from .types import DataType
+from ..exceptions import (
+    MilvusException,
+)
 
 
 class QueryIterator:
@@ -29,7 +32,7 @@ class QueryIterator:
 
         res = self._conn.query(self._collection_name, self._expr, self._output_fields, self._partition_names,
                                timeout=self._timeout, **first_cursor_kwargs)
-        self.__set_cursor(res)
+        self.__update_cursor(res)
         self._kwargs[OFFSET] = 0
 
     def next(self):
@@ -73,14 +76,76 @@ class QueryIterator:
 
 class SearchIterator:
 
-    def __init__(self, conn):
-        pass
+    def __init__(self, connection, collection_name, data, ann_field, param, limit, expr=None, partition_names=None,
+                 output_fields=None, timeout=None, round_decimal=-1, schema=None, **kwargs):
+        if len(data) > 1:
+            raise MilvusException("Not support multiple vector iterator at present")
+        self._conn = connection
+        self._collection_name = collection_name
+        self._data = data
+        self._ann_field = ann_field
+        self._param = param
+        self._limit = limit
+        self._expr = expr
+        self._output_fields = output_fields
+        self._partition_names = partition_names
+        self._timeout = timeout
+        self._round_decimal = round_decimal
+        self._kwargs = kwargs
+        self._distance_cursor = [0.0]
+        self._schema = schema
+        self.__check_radius()
+        self.__seek()
+        return
+
+    def __check_radius(self):
+        if self._param[PARAMS][RADIUS] is None:
+            raise MilvusException(message="must provide radius parameter when using search iterator")
 
     def __seek(self):
-        pass
+        if self._kwargs.get(OFFSET, 0) != 0:
+            raise MilvusException("Not support offset when searching iteration")
+        '''
+        if self._kwargs.get(OFFSET, 0) == 0:
+            return
+
+        first_cursor_kwargs = self._kwargs.copy()
+        first_cursor_kwargs[OFFSET] = 0
+        # offset may be too large
+        first_cursor_kwargs[LIMIT] = self._kwargs[OFFSET]
+        res = self._conn.search(self._collection_name, self._data, self._ann_field, self._param,
+                                first_cursor_kwargs[LIMIT], self._expr, self._partition_names,
+                                self._output_fields, self._round_decimal, timeout=self._timeout,
+                                schema=self._schema, **self._kwargs)
+        self.__update_cursor(res)
+        self._kwargs[OFFSET] = 0
+        '''
+
+    def __update_cursor(self, res):
+        if len(res[0]) == 0:
+            return
+        last_hit = res[0][-1]
+        self._distance_cursor[0] = last_hit.distance
 
     def next(self):
-        pass
+        next_params = self.__next_params()
+        res = self._conn.search(self._collection_name, self._data, self._ann_field, next_params,
+                                self._limit, self._expr, self._partition_names,
+                                self._output_fields, self._round_decimal, timeout=self._timeout,
+                                schema=self._schema, **self._kwargs)
+        self.__update_cursor(res)
+        return self.__refine_duplicated_result(res)
+
+    # at present, the range_filter parameter means 'larger/less and equal', so there would always
+    # be one repeated result in every page, we need to refine and remove that result before returning
+    def __refine_duplicated_result(self, search_result):
+         non_repeated_result = search_result[0][1:]
+
+
+    def __next_params(self):
+        next_params = self._param.copy()
+        next_params[PARAMS][RANGE_FILTER] = self._distance_cursor[0]
+        return next_params
 
     def close(self):
         pass

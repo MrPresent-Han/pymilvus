@@ -27,5 +27,10 @@ CALC_DIST_DIM = "dim"
 OFFSET = "offset"
 LIMIT = "limit"
 ID = "id"
-
+METRIC_TYPE = "metric_type"
+PARAMS = "params"
+DISTANCE = "distance"
+RADIUS = "radius"
+RANGE_FILTER = "range_filter"
 FIELDS = "fields"
+
