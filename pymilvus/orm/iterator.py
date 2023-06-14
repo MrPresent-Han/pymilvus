@@ -1,4 +1,5 @@
-from .constants import OFFSET, LIMIT, ID, FIELDS, RANGE_FILTER, RADIUS, PARAMS, ITERATION_EXTENSION_REDUCE_RATE
+from .constants import OFFSET, LIMIT, ID, FIELDS, METRIC_TYPE, RANGE_FILTER, RADIUS, PARAMS, \
+    ITERATION_EXTENSION_REDUCE_RATE, DEFAULT_MAX_L2_DISTANCE
 from .types import DataType
 from ..exceptions import (
     MilvusException,
@@ -116,9 +117,9 @@ class SearchIterator:
         self._schema = schema
         self.__check_radius()
         self.__seek()
-        self.__setup__pk_is_str()
+        self.__setup__pk_prop()
 
-    def __setup__pk_is_str(self):
+    def __setup__pk_prop(self):
         fields = self._schema[FIELDS]
         for field in fields:
             if field['is_primary']:
@@ -126,11 +127,26 @@ class SearchIterator:
                     self._pk_str = True
                 else:
                     self._pk_str = False
+                self._pk_field_name = field['name']
                 break
+        if self._pk_field_name is None:
+            raise MilvusException("schema must contain pk field, broke")
 
     def __check_radius(self):
-        if self._param[PARAMS][RADIUS] is None:
-            raise MilvusException(message="must provide radius parameter when using search iterator")
+        if PARAMS not in self._param:
+            if self._param[METRIC_TYPE] == "L2":
+                self._param[PARAMS] = {"radius": DEFAULT_MAX_L2_DISTANCE}
+            elif self._param[METRIC_TYPE] == "IP":
+                self._param[PARAMS] = {"radius": 0}
+            else:
+                raise MilvusException(message="only support L2 or IP metrics")
+        elif RADIUS not in self._param[PARAMS]:
+            if self._param[METRIC_TYPE] == "L2":
+                self._param[PARAMS][RADIUS] = DEFAULT_MAX_L2_DISTANCE
+            elif self._param[METRIC_TYPE] == "IP":
+                self._param[PARAMS][RADIUS] = 0
+            else:
+                raise MilvusException(message="only support L2 or IP metrics")
 
     def __seek(self):
         if self._kwargs.get(OFFSET, 0) != 0:
@@ -173,14 +189,19 @@ class SearchIterator:
         filtered_ids_str = ""
         for filtered_id in self._filtered_ids:
             if self._pk_str:
-                filtered_ids_str += f"\"{filtered_id}\", "
+                filtered_ids_str += f"\"{filtered_id}\","
             else:
-                filtered_ids_str += f"{filtered_id}, "
+                filtered_ids_str += f"{filtered_id},"
+        filtered_ids_str = filtered_ids_str[0:-1]
 
-        filter_expr = f"id not in [{filtered_ids_str}]"
-        if expr is not None:
-            return expr + filter_expr
-        return filter_expr
+        if len(filtered_ids_str) > 0:
+            if expr is not None and len(expr) > 0:
+                filter_expr = f" and {self._pk_field_name} not in [{filtered_ids_str}]"
+                return expr + filter_expr
+            else:
+                filter_expr = f"{self._pk_field_name} not in [{filtered_ids_str}]"
+                return filter_expr
+        return expr
 
     def __next_params(self):
         next_params = self._param.copy()
