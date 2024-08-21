@@ -1108,6 +1108,31 @@ class Collection:
             **kwargs,
         )
 
+    def scan_iterator(
+        self,
+        batch_size: Optional[int] = 1000,
+        limit: Optional[int] = UNLIMITED,
+        expr: Optional[str] = None,
+        output_fields: Optional[List[str]] = None,
+        partition_names: Optional[List[str]] = None,
+        timeout: Optional[float] = None,
+        **kwargs,
+    ):
+        if expr is not None and not isinstance(expr, str):
+            raise DataTypeNotMatchException(message=ExceptionsMessage.ExprType % type(expr))
+        return QueryIterator(
+            connection=self._get_connection(),
+            collection_name=self._name,
+            batch_size=batch_size,
+            limit=limit,
+            expr=expr,
+            output_fields=output_fields,
+            partition_names=partition_names,
+            schema=self._schema_dict,
+            timeout=timeout,
+            **kwargs,
+        )
+
     @property
     def partitions(self) -> List[Partition]:
         """List[Partition]: List of Partition object.

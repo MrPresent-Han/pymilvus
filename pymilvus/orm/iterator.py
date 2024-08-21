@@ -33,6 +33,7 @@ from .constants import (
     PARAMS,
     RADIUS,
     RANGE_FILTER,
+    READ_CTX_ID,
     REDUCE_STOP_FOR_BEST,
     UNLIMITED,
 )
@@ -43,6 +44,73 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.ERROR)
 QueryIterator = TypeVar("QueryIterator")
 SearchIterator = TypeVar("SearchIterator")
+ScanIterator = TypeVar("ScanIterator")
+
+
+def check_set_back_size(batch_size: int, **kwargs):
+    if batch_size < 0:
+        raise ParamError(message="batch size cannot be less than zero")
+    if batch_size > MAX_BATCH_SIZE:
+        raise ParamError(message=f"batch size cannot be larger than {MAX_BATCH_SIZE}")
+    kwargs[BATCH_SIZE] = batch_size
+    kwargs[MILVUS_LIMIT] = batch_size
+
+
+def set_up_iteration_states(**kwargs):
+    kwargs[ITERATOR_FIELD] = "True"
+
+
+class ScanIterator:
+    def __init__(
+            self,
+            connection: Connections,
+            collection_name: str,
+            batch_size: Optional[int] = 1000,
+            limit: Optional[int] = -1,
+            expr: Optional[str] = None,
+            output_fields: Optional[List[str]] = None,
+            partition_names: Optional[List[str]] = None,
+            schema: Optional[CollectionSchema] = None,
+            timeout: Optional[float] = None,
+            **kwargs,
+    ) -> ScanIterator:
+        self._conn = connection
+        self._collection_name = collection_name
+        self._output_fields = output_fields
+        self._partition_names = partition_names
+        self._schema = schema
+        self._timeout = timeout
+        self._kwargs = kwargs
+        check_set_back_size(batch_size, self._kwargs)
+        self._limit = limit
+        self._returned_count = 0
+        self.__set_up_expr(expr)
+        self.__set_up_scan_ctx()
+
+    def __set_up_scan_ctx(self):
+        init_kwargs = self._kwargs.copy()
+        init_kwargs[READ_CTX_ID] = -1
+        init_kwargs[MILVUS_LIMIT] = 1
+        # the initial query request is used to set up client-side context
+        # so use a small limit to save work load
+        res = self._conn.query(
+            collection_name=self._collection_name,
+            expr=self._expr,
+            output_field=[],
+            partition_name=self._partition_names,
+            timeout=self._timeout,
+            **init_kwargs,
+        )
+
+
+    def __set_up_expr(self, expr: str):
+        if expr is not None:
+            self._expr = expr
+        elif self._pk_str:
+            self._expr = self._pk_field_name + ' != ""'
+        else:
+            self._expr = self._pk_field_name + " < " + str(INT64_MAX)
+
 
 
 def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: bool) -> int:
@@ -57,19 +125,20 @@ def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: b
     return min(MAX_BATCH_SIZE, batch_size * extend_rate)
 
 
+
 class QueryIterator:
     def __init__(
-        self,
-        connection: Connections,
-        collection_name: str,
-        batch_size: Optional[int] = 1000,
-        limit: Optional[int] = -1,
-        expr: Optional[str] = None,
-        output_fields: Optional[List[str]] = None,
-        partition_names: Optional[List[str]] = None,
-        schema: Optional[CollectionSchema] = None,
-        timeout: Optional[float] = None,
-        **kwargs,
+            self,
+            connection: Connections,
+            collection_name: str,
+            batch_size: Optional[int] = 1000,
+            limit: Optional[int] = -1,
+            expr: Optional[str] = None,
+            output_fields: Optional[List[str]] = None,
+            partition_names: Optional[List[str]] = None,
+            schema: Optional[CollectionSchema] = None,
+            timeout: Optional[float] = None,
+            **kwargs,
     ) -> QueryIterator:
         self._conn = connection
         self._collection_name = collection_name
@@ -78,8 +147,8 @@ class QueryIterator:
         self._schema = schema
         self._timeout = timeout
         self._kwargs = kwargs
-        self.__set_up_iteration_states()
-        self.__check_set_batch_size(batch_size)
+        set_up_iteration_states(self._kwargs)
+        check_set_back_size(batch_size, self._kwargs)
         self._limit = limit
         self.__check_set_reduce_stop_for_best()
         self._returned_count = 0
@@ -88,24 +157,12 @@ class QueryIterator:
         self.__seek()
         self._cache_id_in_use = NO_CACHE_ID
 
-    def __set_up_iteration_states(self):
-        self._kwargs[ITERATOR_FIELD] = "True"
-
     def __check_set_reduce_stop_for_best(self):
         if self._kwargs.get(REDUCE_STOP_FOR_BEST, True):
             self._kwargs[REDUCE_STOP_FOR_BEST] = "True"
         else:
             self._kwargs[REDUCE_STOP_FOR_BEST] = "False"
 
-    def __check_set_batch_size(self, batch_size: int):
-        if batch_size < 0:
-            raise ParamError(message="batch size cannot be less than zero")
-        if batch_size > MAX_BATCH_SIZE:
-            raise ParamError(message=f"batch size cannot be larger than {MAX_BATCH_SIZE}")
-        self._kwargs[BATCH_SIZE] = batch_size
-        self._kwargs[MILVUS_LIMIT] = batch_size
-
-    # rely on pk prop, so this method should be called after __set_up_expr
     def __set_up_expr(self, expr: str):
         if expr is not None:
             self._expr = expr
@@ -151,8 +208,8 @@ class QueryIterator:
         cached_res = iterator_cache.fetch_cache(self._cache_id_in_use)
         ret = None
         if self.__is_res_sufficient(cached_res):
-            ret = cached_res[0 : self._kwargs[BATCH_SIZE]]
-            res_to_cache = cached_res[self._kwargs[BATCH_SIZE] :]
+            ret = cached_res[0: self._kwargs[BATCH_SIZE]]
+            res_to_cache = cached_res[self._kwargs[BATCH_SIZE]:]
             iterator_cache.cache(res_to_cache, self._cache_id_in_use)
         else:
             iterator_cache.release_cache(self._cache_id_in_use)
@@ -166,7 +223,7 @@ class QueryIterator:
                 **self._kwargs,
             )
             self.__maybe_cache(res)
-            ret = res[0 : min(self._kwargs[BATCH_SIZE], len(res))]
+            ret = res[0: min(self._kwargs[BATCH_SIZE], len(res))]
 
         ret = self.__check_reached_limit(ret)
         self.__update_cursor(ret)
@@ -283,21 +340,21 @@ class SearchPage(LoopBase):
 
 class SearchIterator:
     def __init__(
-        self,
-        connection: Connections,
-        collection_name: str,
-        data: Union[List, utils.SparseMatrixInputType],
-        ann_field: str,
-        param: Dict,
-        batch_size: Optional[int] = 1000,
-        limit: Optional[int] = UNLIMITED,
-        expr: Optional[str] = None,
-        partition_names: Optional[List[str]] = None,
-        output_fields: Optional[List[str]] = None,
-        timeout: Optional[float] = None,
-        round_decimal: int = -1,
-        schema: Optional[CollectionSchema] = None,
-        **kwargs,
+            self,
+            connection: Connections,
+            collection_name: str,
+            data: Union[List, utils.SparseMatrixInputType],
+            ann_field: str,
+            param: Dict,
+            batch_size: Optional[int] = 1000,
+            limit: Optional[int] = UNLIMITED,
+            expr: Optional[str] = None,
+            partition_names: Optional[List[str]] = None,
+            output_fields: Optional[List[str]] = None,
+            timeout: Optional[float] = None,
+            round_decimal: int = -1,
+            schema: Optional[CollectionSchema] = None,
+            **kwargs,
     ) -> SearchIterator:
         rows = entity_helper.get_input_num_rows(data)
         if rows > 1:
@@ -321,7 +378,7 @@ class SearchIterator:
         self.__check_set_params(param)
         self.__check_for_special_index_param()
         self._kwargs = kwargs
-        self.__set_up_iteration_states()
+        set_up_iteration_states(self._kwargs)
         self._filtered_ids = []
         self._filtered_distance = None
         self._schema = schema
@@ -348,9 +405,6 @@ class SearchIterator:
         self.__set_up_range_parameters(init_page)
         self.__update_filtered_ids(init_page)
         self._init_success = True
-
-    def __set_up_iteration_states(self):
-        self._kwargs[ITERATOR_FIELD] = "True"
 
     def __update_width(self, page: SearchPage):
         first_hit, last_hit = page[0], page[-1]
@@ -387,8 +441,8 @@ class SearchIterator:
 
     def __check_for_special_index_param(self):
         if (
-            EF in self._param[PARAMS]
-            and self._param[PARAMS][EF] < self._iterator_params[BATCH_SIZE]
+                EF in self._param[PARAMS]
+                and self._param[PARAMS][EF] < self._iterator_params[BATCH_SIZE]
         ):
             raise MilvusException(
                 message="When using hnsw index, provided ef must be larger than or equal to batch size"
@@ -416,21 +470,21 @@ class SearchIterator:
 
     def __check_rm_range_search_parameters(self):
         if (
-            (PARAMS in self._param)
-            and (RADIUS in self._param[PARAMS])
-            and (RANGE_FILTER in self._param[PARAMS])
+                (PARAMS in self._param)
+                and (RADIUS in self._param[PARAMS])
+                and (RANGE_FILTER in self._param[PARAMS])
         ):
             radius = self._param[PARAMS][RADIUS]
             range_filter = self._param[PARAMS][RANGE_FILTER]
             if metrics_positive_related(self._param[METRIC_TYPE]) and radius <= range_filter:
                 raise MilvusException(
                     message=f"for metrics:{self._param[METRIC_TYPE]}, radius must be "
-                    f"larger than range_filter, please adjust your parameter"
+                            f"larger than range_filter, please adjust your parameter"
                 )
             if not metrics_positive_related(self._param[METRIC_TYPE]) and radius >= range_filter:
                 raise MilvusException(
                     message=f"for metrics:{self._param[METRIC_TYPE]}, radius must be "
-                    f"smalled than range_filter, please adjust your parameter"
+                            f"smalled than range_filter, please adjust your parameter"
                 )
 
     def __check_offset(self):
@@ -452,8 +506,8 @@ class SearchIterator:
         if len(self._filtered_ids) > MAX_FILTERED_IDS_COUNT_ITERATION:
             raise MilvusException(
                 message=f"filtered ids length has accumulated to more than "
-                f"{MAX_FILTERED_IDS_COUNT_ITERATION!s}, "
-                f"there is a danger of overly memory consumption"
+                        f"{MAX_FILTERED_IDS_COUNT_ITERATION!s}, "
+                        f"there is a danger of overly memory consumption"
             )
 
     def __is_cache_enough(self, count: int) -> bool:
@@ -465,7 +519,7 @@ class SearchIterator:
         if cached_page is None or len(cached_page) < count:
             raise ParamError(
                 message=f"Wrong, try to extract {count} result from cache, "
-                f"more than {len(cached_page)} there must be sth wrong with code"
+                        f"more than {len(cached_page)} there must be sth wrong with code"
             )
 
         ret_page_res = cached_page[0:count]
@@ -537,7 +591,7 @@ class SearchIterator:
         return final_page
 
     def __execute_next_search(
-        self, next_params: dict, next_expr: str, to_extend_batch: bool
+            self, next_params: dict, next_expr: str, to_extend_batch: bool
     ) -> SearchPage:
         res = self._conn.search(
             self._iterator_params["collection_name"],
