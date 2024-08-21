@@ -1,3 +1,4 @@
 [submodule "pymilvus/grpc_gen/milvus-proto"]
 	path = pymilvus/grpc_gen/milvus-proto
 	url = https://github.com/MrPresent-Han/milvus-proto.git
+    branch = support-scan-iterator
