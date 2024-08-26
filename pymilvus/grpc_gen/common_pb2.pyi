@@ -89,6 +89,13 @@ class SegmentState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     Dropped: _ClassVar[SegmentState]
     Importing: _ClassVar[SegmentState]
 
+class SegmentLevel(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    Legacy: _ClassVar[SegmentLevel]
+    L0: _ClassVar[SegmentLevel]
+    L1: _ClassVar[SegmentLevel]
+    L2: _ClassVar[SegmentLevel]
+
 class PlaceholderType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     None: _ClassVar[PlaceholderType]
@@ -144,6 +151,8 @@ class MsgType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     Flush: _ClassVar[MsgType]
     ResendSegmentStats: _ClassVar[MsgType]
     Upsert: _ClassVar[MsgType]
+    ManualFlush: _ClassVar[MsgType]
+    FlushSegment: _ClassVar[MsgType]
     Search: _ClassVar[MsgType]
     SearchResult: _ClassVar[MsgType]
     GetIndexState: _ClassVar[MsgType]
@@ -295,6 +304,11 @@ class ObjectPrivilege(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PrivilegeUpdateResourceGroups: _ClassVar[ObjectPrivilege]
     PrivilegeAlterDatabase: _ClassVar[ObjectPrivilege]
     PrivilegeDescribeDatabase: _ClassVar[ObjectPrivilege]
+    PrivilegeBackupRBAC: _ClassVar[ObjectPrivilege]
+    PrivilegeRestoreRBAC: _ClassVar[ObjectPrivilege]
+    PrivilegeGroupReadOnly: _ClassVar[ObjectPrivilege]
+    PrivilegeGroupReadWrite: _ClassVar[ObjectPrivilege]
+    PrivilegeGroupAdmin: _ClassVar[ObjectPrivilege]
 
 class StateCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -383,6 +397,10 @@ Flushed: SegmentState
 Flushing: SegmentState
 Dropped: SegmentState
 Importing: SegmentState
+Legacy: SegmentLevel
+L0: SegmentLevel
+L1: SegmentLevel
+L2: SegmentLevel
 None: PlaceholderType
 BinaryVector: PlaceholderType
 FloatVector: PlaceholderType
@@ -433,6 +451,8 @@ Delete: MsgType
 Flush: MsgType
 ResendSegmentStats: MsgType
 Upsert: MsgType
+ManualFlush: MsgType
+FlushSegment: MsgType
 Search: MsgType
 SearchResult: MsgType
 GetIndexState: MsgType
@@ -566,6 +586,11 @@ PrivilegeListAliases: ObjectPrivilege
 PrivilegeUpdateResourceGroups: ObjectPrivilege
 PrivilegeAlterDatabase: ObjectPrivilege
 PrivilegeDescribeDatabase: ObjectPrivilege
+PrivilegeBackupRBAC: ObjectPrivilege
+PrivilegeRestoreRBAC: ObjectPrivilege
+PrivilegeGroupReadOnly: ObjectPrivilege
+PrivilegeGroupReadWrite: ObjectPrivilege
+PrivilegeGroupAdmin: ObjectPrivilege
 Initializing: StateCode
 Healthy: StateCode
 Abnormal: StateCode

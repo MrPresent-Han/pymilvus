@@ -1525,6 +1525,11 @@ class GrpcHandler:
                 response.fields_data, index, dynamic_fields
             )
             results.append(entity_row_data)
+
+        extra = {}
+        cost_key, cost_val = get_cost_extra(response.status)
+        extra[cost_key] = cost_val
+        extra["read_ctx"] = response.read_ctx
         return ExtraList(results, extra=get_cost_extra(response.status))
 
     @retry_on_rpc_failure()

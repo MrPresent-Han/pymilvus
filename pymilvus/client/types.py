@@ -942,7 +942,7 @@ def get_cost_from_status(status: Optional[common_pb2.Status] = None):
 
 
 def get_cost_extra(status: Optional[common_pb2.Status] = None):
-    return {"cost": get_cost_from_status(status)}
+    return "cost", get_cost_from_status(status)
 
 
 # Construct extra dict, the cost unit is the vcu, similar to tokenlike the
