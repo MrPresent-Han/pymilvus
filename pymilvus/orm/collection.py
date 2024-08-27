@@ -43,7 +43,7 @@ from .connections import connections
 from .constants import UNLIMITED
 from .future import MutationFuture, SearchFuture
 from .index import Index
-from .iterator import QueryIterator, SearchIterator
+from .iterator import QueryIterator, ScanIterator, SearchIterator
 from .mutation import MutationResult
 from .partition import Partition
 from .prepare import Prepare
@@ -1120,7 +1120,7 @@ class Collection:
     ):
         if expr is not None and not isinstance(expr, str):
             raise DataTypeNotMatchException(message=ExceptionsMessage.ExprType % type(expr))
-        return QueryIterator(
+        return ScanIterator(
             connection=self._get_connection(),
             collection_name=self._name,
             batch_size=batch_size,

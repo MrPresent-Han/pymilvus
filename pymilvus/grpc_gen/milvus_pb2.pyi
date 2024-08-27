@@ -891,18 +891,35 @@ class FlushResponse(_message.Message):
     channel_cps: _containers.MessageMap[str, _msg_pb2.MsgPosition]
     def __init__(self, status: _Optional[_Union[_common_pb2.Status, _Mapping]] = ..., db_name: _Optional[str] = ..., coll_segIDs: _Optional[_Mapping[str, _schema_pb2.LongArray]] = ..., flush_coll_segIDs: _Optional[_Mapping[str, _schema_pb2.LongArray]] = ..., coll_seal_times: _Optional[_Mapping[str, int]] = ..., coll_flush_ts: _Optional[_Mapping[str, int]] = ..., channel_cps: _Optional[_Mapping[str, _msg_pb2.MsgPosition]] = ...) -> None: ...
 
-class ScanCursor(_message.Message):
-    __slots__ = ("channels", "nodes", "segment_idx")
-    CHANNELS_FIELD_NUMBER: _ClassVar[int]
-    NODES_FIELD_NUMBER: _ClassVar[int]
+class ScanItem(_message.Message):
+    __slots__ = ("node", "segment_idx", "offset", "mvcc_ts")
+    NODE_FIELD_NUMBER: _ClassVar[int]
     SEGMENT_IDX_FIELD_NUMBER: _ClassVar[int]
-    channels: _containers.RepeatedScalarFieldContainer[str]
-    nodes: _containers.RepeatedScalarFieldContainer[int]
-    segment_idx: _containers.RepeatedScalarFieldContainer[int]
-    def __init__(self, channels: _Optional[_Iterable[str]] = ..., nodes: _Optional[_Iterable[int]] = ..., segment_idx: _Optional[_Iterable[int]] = ...) -> None: ...
+    OFFSET_FIELD_NUMBER: _ClassVar[int]
+    MVCC_TS_FIELD_NUMBER: _ClassVar[int]
+    node: int
+    segment_idx: int
+    offset: int
+    mvcc_ts: int
+    def __init__(self, node: _Optional[int] = ..., segment_idx: _Optional[int] = ..., offset: _Optional[int] = ..., mvcc_ts: _Optional[int] = ...) -> None: ...
+
+class ScanCtx(_message.Message):
+    __slots__ = ("scan_ctx_id", "scan_map")
+    class ScanMapEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: ScanItem
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ScanItem, _Mapping]] = ...) -> None: ...
+    SCAN_CTX_ID_FIELD_NUMBER: _ClassVar[int]
+    SCAN_MAP_FIELD_NUMBER: _ClassVar[int]
+    scan_ctx_id: int
+    scan_map: _containers.MessageMap[str, ScanItem]
+    def __init__(self, scan_ctx_id: _Optional[int] = ..., scan_map: _Optional[_Mapping[str, ScanItem]] = ...) -> None: ...
 
 class QueryRequest(_message.Message):
-    __slots__ = ("base", "db_name", "collection_name", "expr", "output_fields", "partition_names", "travel_timestamp", "guarantee_timestamp", "query_params", "not_return_all_meta", "consistency_level", "use_default_consistency", "scan_cursor")
+    __slots__ = ("base", "db_name", "collection_name", "expr", "output_fields", "partition_names", "travel_timestamp", "guarantee_timestamp", "query_params", "not_return_all_meta", "consistency_level", "use_default_consistency", "scan_req_ctx")
     BASE_FIELD_NUMBER: _ClassVar[int]
     DB_NAME_FIELD_NUMBER: _ClassVar[int]
     COLLECTION_NAME_FIELD_NUMBER: _ClassVar[int]
@@ -915,7 +932,7 @@ class QueryRequest(_message.Message):
     NOT_RETURN_ALL_META_FIELD_NUMBER: _ClassVar[int]
     CONSISTENCY_LEVEL_FIELD_NUMBER: _ClassVar[int]
     USE_DEFAULT_CONSISTENCY_FIELD_NUMBER: _ClassVar[int]
-    SCAN_CURSOR_FIELD_NUMBER: _ClassVar[int]
+    SCAN_REQ_CTX_FIELD_NUMBER: _ClassVar[int]
     base: _common_pb2.MsgBase
     db_name: str
     collection_name: str
@@ -928,35 +945,22 @@ class QueryRequest(_message.Message):
     not_return_all_meta: bool
     consistency_level: _common_pb2.ConsistencyLevel
     use_default_consistency: bool
-    scan_cursor: ScanCursor
-    def __init__(self, base: _Optional[_Union[_common_pb2.MsgBase, _Mapping]] = ..., db_name: _Optional[str] = ..., collection_name: _Optional[str] = ..., expr: _Optional[str] = ..., output_fields: _Optional[_Iterable[str]] = ..., partition_names: _Optional[_Iterable[str]] = ..., travel_timestamp: _Optional[int] = ..., guarantee_timestamp: _Optional[int] = ..., query_params: _Optional[_Iterable[_Union[_common_pb2.KeyValuePair, _Mapping]]] = ..., not_return_all_meta: bool = ..., consistency_level: _Optional[_Union[_common_pb2.ConsistencyLevel, str]] = ..., use_default_consistency: bool = ..., scan_cursor: _Optional[_Union[ScanCursor, _Mapping]] = ...) -> None: ...
-
-class ScanCtx(_message.Message):
-    __slots__ = ("channel_node_map",)
-    class ChannelNodeMapEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: int
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[int] = ...) -> None: ...
-    CHANNEL_NODE_MAP_FIELD_NUMBER: _ClassVar[int]
-    channel_node_map: _containers.ScalarMap[str, int]
-    def __init__(self, channel_node_map: _Optional[_Mapping[str, int]] = ...) -> None: ...
+    scan_req_ctx: ScanCtx
+    def __init__(self, base: _Optional[_Union[_common_pb2.MsgBase, _Mapping]] = ..., db_name: _Optional[str] = ..., collection_name: _Optional[str] = ..., expr: _Optional[str] = ..., output_fields: _Optional[_Iterable[str]] = ..., partition_names: _Optional[_Iterable[str]] = ..., travel_timestamp: _Optional[int] = ..., guarantee_timestamp: _Optional[int] = ..., query_params: _Optional[_Iterable[_Union[_common_pb2.KeyValuePair, _Mapping]]] = ..., not_return_all_meta: bool = ..., consistency_level: _Optional[_Union[_common_pb2.ConsistencyLevel, str]] = ..., use_default_consistency: bool = ..., scan_req_ctx: _Optional[_Union[ScanCtx, _Mapping]] = ...) -> None: ...
 
 class QueryResults(_message.Message):
-    __slots__ = ("status", "fields_data", "collection_name", "output_fields", "read_ctx")
+    __slots__ = ("status", "fields_data", "collection_name", "output_fields", "scan_resp_ctx")
     STATUS_FIELD_NUMBER: _ClassVar[int]
     FIELDS_DATA_FIELD_NUMBER: _ClassVar[int]
     COLLECTION_NAME_FIELD_NUMBER: _ClassVar[int]
     OUTPUT_FIELDS_FIELD_NUMBER: _ClassVar[int]
-    READ_CTX_FIELD_NUMBER: _ClassVar[int]
+    SCAN_RESP_CTX_FIELD_NUMBER: _ClassVar[int]
     status: _common_pb2.Status
     fields_data: _containers.RepeatedCompositeFieldContainer[_schema_pb2.FieldData]
     collection_name: str
     output_fields: _containers.RepeatedScalarFieldContainer[str]
-    read_ctx: ScanCtx
-    def __init__(self, status: _Optional[_Union[_common_pb2.Status, _Mapping]] = ..., fields_data: _Optional[_Iterable[_Union[_schema_pb2.FieldData, _Mapping]]] = ..., collection_name: _Optional[str] = ..., output_fields: _Optional[_Iterable[str]] = ..., read_ctx: _Optional[_Union[ScanCtx, _Mapping]] = ...) -> None: ...
+    scan_resp_ctx: ScanCtx
+    def __init__(self, status: _Optional[_Union[_common_pb2.Status, _Mapping]] = ..., fields_data: _Optional[_Iterable[_Union[_schema_pb2.FieldData, _Mapping]]] = ..., collection_name: _Optional[str] = ..., output_fields: _Optional[_Iterable[str]] = ..., scan_resp_ctx: _Optional[_Union[ScanCtx, _Mapping]] = ...) -> None: ...
 
 class VectorIDs(_message.Message):
     __slots__ = ("collection_name", "field_name", "id_array", "partition_names")

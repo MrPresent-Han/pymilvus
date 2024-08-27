@@ -9,14 +9,13 @@ from pymilvus.grpc_gen import common_pb2 as common_types
 from pymilvus.grpc_gen import milvus_pb2 as milvus_types
 from pymilvus.grpc_gen import schema_pb2 as schema_types
 from pymilvus.orm.schema import CollectionSchema
+from pymilvus.orm.constants import SCAN_CTX, ITERATOR_FIELD, REDUCE_STOP_FOR_BEST
 
 from . import __version__, blob, entity_helper, ts_utils, utils
 from .check import check_pass_param, is_legal_collection_properties
 from .constants import (
     DEFAULT_CONSISTENCY_LEVEL,
     GROUP_BY_FIELD,
-    ITERATOR_FIELD,
-    REDUCE_STOP_FOR_BEST,
 )
 from .types import (
     DataType,
@@ -25,7 +24,6 @@ from .types import (
     get_consistency_level,
 )
 from .utils import traverse_info, traverse_rows_info
-
 
 class Prepare:
     @classmethod
@@ -917,6 +915,7 @@ class Prepare:
         **kwargs,
     ):
         use_default_consistency = ts_utils.construct_guarantee_ts(collection_name, kwargs)
+        scan_ctx = kwargs.get(SCAN_CTX, None)
         req = milvus_types.QueryRequest(
             db_name="",
             collection_name=collection_name,
@@ -926,6 +925,7 @@ class Prepare:
             guarantee_timestamp=kwargs.get("guarantee_timestamp", 0),
             use_default_consistency=use_default_consistency,
             consistency_level=kwargs.get("consistency_level", 0),
+            scan_req_ctx=scan_ctx,
         )
 
         limit = kwargs.get("limit", None)

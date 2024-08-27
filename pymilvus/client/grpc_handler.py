@@ -67,7 +67,7 @@ from .utils import (
     is_successful,
     len_of,
 )
-
+from pymilvus.orm.constants import SCAN_CTX
 
 class GrpcHandler:
     # pylint: disable=too-many-instance-attributes
@@ -1529,8 +1529,8 @@ class GrpcHandler:
         extra = {}
         cost_key, cost_val = get_cost_extra(response.status)
         extra[cost_key] = cost_val
-        extra["read_ctx"] = response.read_ctx
-        return ExtraList(results, extra=get_cost_extra(response.status))
+        extra[SCAN_CTX] = response.scan_resp_ctx
+        return ExtraList(results, extra=extra)
 
     @retry_on_rpc_failure()
     def load_balance(

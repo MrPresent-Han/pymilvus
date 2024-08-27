@@ -8,6 +8,7 @@ from pymilvus.exceptions import (
     MilvusException,
     ParamError,
 )
+from pymilvus.grpc_gen import milvus_pb2 as milvus_types
 
 from .connections import Connections
 from .constants import (
@@ -33,7 +34,8 @@ from .constants import (
     PARAMS,
     RADIUS,
     RANGE_FILTER,
-    READ_CTX_ID,
+    SCAN_CTX,
+    SCAN_CTX_ID,
     REDUCE_STOP_FOR_BEST,
     UNLIMITED,
 )
@@ -47,7 +49,7 @@ SearchIterator = TypeVar("SearchIterator")
 ScanIterator = TypeVar("ScanIterator")
 
 
-def check_set_back_size(batch_size: int, **kwargs):
+def check_set_batch_size(batch_size: int, **kwargs):
     if batch_size < 0:
         raise ParamError(message="batch size cannot be less than zero")
     if batch_size > MAX_BATCH_SIZE:
@@ -81,7 +83,7 @@ class ScanIterator:
         self._schema = schema
         self._timeout = timeout
         self._kwargs = kwargs
-        check_set_back_size(batch_size, self._kwargs)
+        check_set_batch_size(batch_size, **self._kwargs)
         self._limit = limit
         self._returned_count = 0
         self.__set_up_expr(expr)
@@ -89,10 +91,11 @@ class ScanIterator:
 
     def __set_up_scan_ctx(self):
         init_kwargs = self._kwargs.copy()
-        init_kwargs[READ_CTX_ID] = -1
         init_kwargs[MILVUS_LIMIT] = 1
         # the initial query request is used to set up client-side context
         # so use a small limit to save work load
+        scan_ctx = milvus_types.ScanCtx(scan_ctx_id=0, scan_map=None)
+        init_kwargs[SCAN_CTX] = scan_ctx
         res = self._conn.query(
             collection_name=self._collection_name,
             expr=self._expr,
@@ -101,6 +104,9 @@ class ScanIterator:
             timeout=self._timeout,
             **init_kwargs,
         )
+        self.__scan_ctx = res[SCAN_CTX]
+        self.__scan_ctx_list = [(key, value) for key, value in scan_ctx.scan_map.items()]
+        self.__scan_delegator_idx = 0
 
 
     def __set_up_expr(self, expr: str):
@@ -112,6 +118,20 @@ class ScanIterator:
             self._expr = self._pk_field_name + " < " + str(INT64_MAX)
 
 
+
+    def next(self):
+        next_kwargs = self._kwargs.copy()
+        scan_ctx = self.__scan_ctx
+        next_kwargs[SCAN_CTX] = scan_ctx
+        res = self._conn.query(
+            collection_name=self._collection_name,
+            expr=self._expr,
+            output_field=[],
+            partition_name=self._partition_names,
+            timeout=self._timeout,
+            **next_kwargs,
+        )
+        return res
 
 def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: bool) -> int:
     extend_rate = 1
@@ -148,7 +168,7 @@ class QueryIterator:
         self._timeout = timeout
         self._kwargs = kwargs
         set_up_iteration_states(self._kwargs)
-        check_set_back_size(batch_size, self._kwargs)
+        check_set_batch_size(batch_size, self._kwargs)
         self._limit = limit
         self.__check_set_reduce_stop_for_best()
         self._returned_count = 0
