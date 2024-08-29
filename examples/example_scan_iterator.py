@@ -29,8 +29,8 @@ if clean_exist and utility.has_collection(collection_name):
     utility.drop_collection(collection_name)
 
 collection = Collection(collection_name, schema=schema)
-nb = 1500
-batch_num = 3
+nb = 100
+batch_num = 1
 vectors = [[random.random() for _ in range(dim)] for _ in range(nb)]
 # insert data
 if prepare_data:
@@ -50,10 +50,17 @@ if prepare_data:
 
 # create collection and load
 collection.load()
-batch_size = 100
+batch_size = 5
 search_params = {"metric_type": "COSINE"}
 limit = 3000
 expr = "int64>0"
 
 scan_it = collection.scan_iterator(batch_size=batch_size, limit=limit, expr=expr)
+res = scan_it.next()
+#print(res)
+res = scan_it.next()
+#print(res)
+res = scan_it.next()
+#print(res)
+
 print("init scan done")

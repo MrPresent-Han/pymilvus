@@ -49,7 +49,7 @@ SearchIterator = TypeVar("SearchIterator")
 ScanIterator = TypeVar("ScanIterator")
 
 
-def check_set_batch_size(batch_size: int, **kwargs):
+def check_set_batch_size(batch_size: int, kwargs: dict):
     if batch_size < 0:
         raise ParamError(message="batch size cannot be less than zero")
     if batch_size > MAX_BATCH_SIZE:
@@ -83,7 +83,7 @@ class ScanIterator:
         self._schema = schema
         self._timeout = timeout
         self._kwargs = kwargs
-        check_set_batch_size(batch_size, **self._kwargs)
+        check_set_batch_size(batch_size, self._kwargs)
         self._limit = limit
         self._returned_count = 0
         self.__set_up_expr(expr)
@@ -104,10 +104,11 @@ class ScanIterator:
             timeout=self._timeout,
             **init_kwargs,
         )
-        self.__scan_ctx = res[SCAN_CTX]
-        self.__scan_ctx_list = [(key, value) for key, value in scan_ctx.scan_map.items()]
+        self.__scan_ctx = res.extra[SCAN_CTX]
+        self.__scan_delegator_list = [key for key, _ in self.__scan_ctx.scan_map.items()]
+        if len(self.__scan_delegator_list) == 0:
+            print("Wrong")
         self.__scan_delegator_idx = 0
-
 
     def __set_up_expr(self, expr: str):
         if expr is not None:
@@ -117,12 +118,25 @@ class ScanIterator:
         else:
             self._expr = self._pk_field_name + " < " + str(INT64_MAX)
 
+    def __locate_scan_ctx(self, scan_ctx: milvus_types.ScanCtx) -> milvus_types.ScanCtx:
+        channel = self.__scan_delegator_list[self.__scan_delegator_idx]
+        target_item = scan_ctx.scan_map.get(channel)
+        new_scan_item = milvus_types.ScanItem()
+        new_scan_item.CopyFrom(target_item)
+        scan_map = {channel: new_scan_item}
+        next_scan_ctx = milvus_types.ScanCtx(scan_ctx_id=scan_ctx.scan_ctx_id, scan_map=scan_map)
+        return next_scan_ctx
+
+    def __update_scan_ctx(self, res):
+        print(f"res:{res}")
+        return
 
 
     def next(self):
         next_kwargs = self._kwargs.copy()
-        scan_ctx = self.__scan_ctx
-        next_kwargs[SCAN_CTX] = scan_ctx
+        next_ctx = self.__locate_scan_ctx(self.__scan_ctx)
+        next_kwargs[SCAN_CTX] = next_ctx
+        print(f"next_ctx:{next_ctx}")
         res = self._conn.query(
             collection_name=self._collection_name,
             expr=self._expr,
@@ -131,7 +145,9 @@ class ScanIterator:
             timeout=self._timeout,
             **next_kwargs,
         )
+        self.__update_scan_ctx(res)
         return res
+
 
 def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: bool) -> int:
     extend_rate = 1
@@ -143,7 +159,6 @@ def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: b
             next_param[PARAMS][EF] = real_batch
         return real_batch
     return min(MAX_BATCH_SIZE, batch_size * extend_rate)
-
 
 
 class QueryIterator:
