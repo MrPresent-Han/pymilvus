@@ -1026,6 +1026,12 @@ class Prepare:
 
         ignore_growing = kwargs.get("ignore_growing", False)
         stop_reduce_for_best = kwargs.get(REDUCE_STOP_FOR_BEST, False)
+        is_iterator = kwargs.get(ITERATOR_FIELD)
+        if is_iterator is not None:
+            req.query_params.append(
+                common_types.KeyValuePair(key=ITERATOR_FIELD, value=is_iterator)
+            )
+
         req.query_params.append(
             common_types.KeyValuePair(key="ignore_growing", value=str(ignore_growing))
         )
