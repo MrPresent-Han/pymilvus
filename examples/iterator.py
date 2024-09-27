@@ -44,7 +44,6 @@ logging.getLogger().setLevel(logging.INFO)  # Set the root logger level to INFO
 logging.getLogger().addHandler(console_handler)  # Attach the handler to the root logger
 
 
-
 def re_create_collection(skip_data_period: bool):
     if not skip_data_period:
         if utility.has_collection(COLLECTION_NAME) and CLEAR_EXIST:
@@ -118,7 +117,8 @@ def query_iterate_collection_no_offset(collection):
 
     query_iterator = collection.query_iterator(expr=expr, output_fields=[USER_ID, AGE],
                                                offset=0, batch_size=5, consistency_level=CONSISTENCY_LEVEL,
-                                               reduce_stop_for_best="false", print_iterator_cursor=True)
+                                               reduce_stop_for_best="false", print_iterator_cursor=False,
+                                               iterator_cp_file="/tmp/it_cp")
     no_best_ids: set = set({})
     page_idx = 0
     while True:
@@ -133,10 +133,12 @@ def query_iterate_collection_no_offset(collection):
         page_idx += 1
         print(f"page{page_idx}-------------------------")
 
+    '''
     print("best---------------------------")
     query_iterator = collection.query_iterator(expr=expr, output_fields=[USER_ID, AGE],
                                                offset=0, batch_size=5, consistency_level=CONSISTENCY_LEVEL,
-                                                   reduce_stop_for_best="true", print_iterator_cursor=True)
+                                                   reduce_stop_for_best="true", print_iterator_cursor=False, iterator_cp_file="/tmp/it_cp")
+    
     best_ids: set = set({})
     page_idx = 0
     while True:
@@ -154,7 +156,7 @@ def query_iterate_collection_no_offset(collection):
     diff = best_ids.difference(no_best_ids)
     for id in diff:
         print(f"diff id:{id}")
-
+    '''
 
 def query_iterate_collection_with_offset(collection):
     expr = f"10 <= {AGE} <= 14"
@@ -245,10 +247,10 @@ def main():
     if not skip_data_period:
         collection = prepare_data(collection)
     query_iterate_collection_no_offset(collection)
-    query_iterate_collection_with_offset(collection)
-    query_iterate_collection_with_limit(collection)
-    search_iterator_collection(collection)
-    search_iterator_collection_with_limit(collection)
+    #query_iterate_collection_with_offset(collection)
+    #query_iterate_collection_with_limit(collection)
+    #search_iterator_collection(collection)
+    #search_iterator_collection_with_limit(collection)
 
 
 if __name__ == '__main__':

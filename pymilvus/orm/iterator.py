@@ -36,9 +36,13 @@ from .constants import (
     RANGE_FILTER,
     REDUCE_STOP_FOR_BEST,
     UNLIMITED,
+    ITERATOR_SESSION_TS_FIELD,
+    GUARANTEE_TIMESTAMP,
+    ITERATOR_SESSION_CP_FILE
 )
 from .schema import CollectionSchema
 from .types import DataType
+import os
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
@@ -83,6 +87,7 @@ class QueryIterator:
         self._partition_names = partition_names
         self._schema = schema
         self._timeout = timeout
+        self._session_ts = 0
         self._kwargs = kwargs
         self._kwargs[ITERATOR_FIELD] = "True"
         self.__check_set_batch_size(batch_size)
@@ -92,8 +97,61 @@ class QueryIterator:
         self._returned_count = 0
         self.__setup__pk_prop()
         self.__set_up_expr(expr)
-        self.__seek()
+        self._next_id = None
+        self.__set_up_check_point()
         self._cache_id_in_use = NO_CACHE_ID
+
+    def __init_cp_file_handler(self):
+        if not self._need_save_cp:
+            return
+        mode = 'r+'
+        if not os.path.exists(self._cp_file_path):
+            mode = 'w'
+        try:
+            self._cp_file_handler = open(self._cp_file_path, mode)
+        except OSError as e:
+            raise e
+
+    def __save_cp(self):
+        if not self._need_save_cp:
+            return
+        self._cp_file_handler.seek(0)
+        self._cp_file_handler.truncate()
+        self._cp_file_handler.writelines(str(self._session_ts) + "\n")
+        if self._next_id is not None:
+            self._cp_file_handler.writelines(self._next_id)
+        self._cp_file_handler.flush()
+
+
+    def __set_up_check_point(self):
+        self._cp_file_path = self._kwargs.get(ITERATOR_SESSION_CP_FILE, None)
+        if self._cp_file_path is None:
+            self.__seek()
+            self._need_save_cp = False
+            return
+        self._need_save_cp = True
+        self.__init_cp_file_handler()
+        file_size = os.path.getsize(self._cp_file_path)
+        if file_size == 0:  # newly created cp file, seek and save cp
+            self.__seek()
+            self.__save_cp()
+        else:
+            if file_size > 1024:
+                raise ParamError(message="input cp file is too large, exceeding 1kb, "
+                                         "this may be a incorrect configuration")
+
+            lines = self._cp_file_handler.readlines()
+            line_count = len(lines)
+            if len(lines) > 2 or len(lines) < 1:
+                raise ParamError(message=f"line number:{len(lines)} of input cp file is wrong, "
+                                         f"which should be one or two")
+            try:
+                self._session_ts = int(lines[0])
+            except ValueError:
+                raise ParamError(message=f"cannot parse input cp session_ts:{lines[0]}")
+            if line_count == 2:
+                self._next_id = lines[1].strip()
+
 
     def __check_set_reduce_stop_for_best(self):
         if self._kwargs.get(REDUCE_STOP_FOR_BEST, True):
@@ -118,10 +176,18 @@ class QueryIterator:
         else:
             self._expr = self._pk_field_name + " < " + str(INT64_MAX)
 
+    def __maybe_set_up_iterator_ts(self, res):
+        if self._session_ts == 0:
+            if res is not None and res.extra is not None:
+                self._session_ts = res.extra.get(ITERATOR_SESSION_TS_FIELD, 0)
+                # if session_ts of iterator is set to zero by default, the consistency cannot be guaranteed by milvus
+                # this is an abnormal case
+        self._kwargs[GUARANTEE_TIMESTAMP] = self._session_ts
+
+
     def __seek(self):
         self._cache_id_in_use = NO_CACHE_ID
         if self._kwargs.get(OFFSET, 0) == 0:
-            self._next_id = None
             return
 
         first_cursor_kwargs = self._kwargs.copy()
@@ -137,6 +203,7 @@ class QueryIterator:
             timeout=self._timeout,
             **first_cursor_kwargs,
         )
+        self.__maybe_set_up_iterator_ts(res)
         self.__update_cursor(res)
         self._kwargs[OFFSET] = 0
 
@@ -172,10 +239,12 @@ class QueryIterator:
                 **self._kwargs,
             )
             self.__maybe_cache(res)
-            ret = res[0 : min(self._kwargs[BATCH_SIZE], len(res))]
+            self.__maybe_set_up_iterator_ts(res)
+            ret = res[0: min(self._kwargs[BATCH_SIZE], len(res))]
 
         ret = self.__check_reached_limit(ret)
         self.__update_cursor(ret)
+        self.__save_cp()
         self._returned_count += len(ret)
         return ret
 
@@ -222,6 +291,7 @@ class QueryIterator:
     def close(self) -> None:
         # release cache in use
         iterator_cache.release_cache(self._cache_id_in_use)
+        self._cp_file_handler.close()
 
 
 def metrics_positive_related(metrics: str) -> bool:

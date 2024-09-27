@@ -67,6 +67,7 @@ from .utils import (
     is_successful,
     len_of,
 )
+from .constants import ITERATOR_SESSION_TS_FIELD
 
 
 class GrpcHandler:
@@ -1554,7 +1555,10 @@ class GrpcHandler:
                 response.fields_data, index, dynamic_fields
             )
             results.append(entity_row_data)
-        return ExtraList(results, extra=get_cost_extra(response.status))
+
+        extra_dict = get_cost_extra(response.status)
+        extra_dict[ITERATOR_SESSION_TS_FIELD] = response.session_ts
+        return ExtraList(results, extra=extra_dict)
 
     @retry_on_rpc_failure()
     def load_balance(
