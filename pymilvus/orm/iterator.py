@@ -43,7 +43,7 @@ from .constants import (
     UNLIMITED,
 )
 from .schema import CollectionSchema
-from .types import DataType
+from .types import DataType, is_integer
 from .utility import mkts_from_datetime
 
 LOGGER = logging.getLogger(__name__)
@@ -57,6 +57,10 @@ log = logging.getLogger(__name__)
 def fall_back_to_latest_session_ts():
     d = datetime.datetime.now()
     return mkts_from_datetime(d, milliseconds=1000.0)
+
+def assert_info(condition, message):
+    if not condition:
+        raise MilvusException(message)
 
 
 def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: bool) -> int:
@@ -73,6 +77,86 @@ def extend_batch_size(batch_size: int, next_param: dict, to_extend_batch_size: b
 def check_set_flag(obj: Any, flag_name: str, kwargs: Dict[str, Any], key: str):
     setattr(obj, flag_name, kwargs.get(key, False))
 
+class IteratorCpFile:
+
+    def __init__(self, cp_file_path: str, pk_str_type: bool):
+        self._mvcc_ts = 0
+        self._db_id = 0
+        self._collection_name = ""
+        self._collection_id = 0
+        if pk_str_type:
+            self._cursor_pk = ""
+        else:
+            self._cursor_pk = 0
+        self._partition_names = []
+        if cp_file_path is not None:
+            self._need_save_cp = True
+            mode = "w"
+            if Path(self._cp_file_path).exists():
+                mode = "r+"
+            try:
+                self._cp_file_handler = Path(self._cp_file_path).open(mode)  # noqa: SIM115
+            except OSError as ose:
+                raise MilvusException(
+                    message=f"Failed to open cp file for iterator:{self._cp_file_path}"
+                ) from ose
+            self._load_from_cp_file = (mode == "r+")
+            assert_info(self._cp_file_handler is not None, f"cp_file_handler for path:{self._cp_file_path} is still None")
+            if self._load_from_cp_file:
+                self.__read_from_cp_file(pk_str_type)
+            return
+        self._need_save_cp = False
+
+
+    # iterator cp file format:
+    # line0: db_id
+    # line1: collection_name
+    # line2: collection_id
+    # line3: mvcc_ts
+    # lint4: cursor_pk
+    # line5: partition_count
+    # line6--lineN: partitions
+
+    def __read_from_cp_file(self, pk_is_str_type: bool):
+        lines = self._cp_file_handler.readlines()
+        line_count = len(lines)
+        assert_info(line_count >= 5, f"Wrong cp file format, at least "
+                                     f"five lines should be included, actually:{line_count}")
+        # db_id
+        assert_info(is_integer(lines[0]), f"db id in the cp file must be of type integer, but got:{lines[0]}")
+        self._db_id = int(lines[0])
+        # collection_name
+        self._collection_name = lines[1]
+        # _collection_id
+        assert_info(is_integer(lines[2]), f"collection id in the cp file must be of type integer, but got:{lines[2]}")
+        self._collection_id = int(lines[2])
+        # mvcc_ts
+        assert_info(is_integer(lines[3]), f"mvcc_ts id in the cp file must be of type integer, but got:{lines[3]}")
+        self._mvcc_ts = int(lines[3])
+        # cursor_pk
+        if pk_is_str_type:
+            self._cursor_pk = lines[4]
+        else:
+            assert_info(is_integer(lines[4]), f"pk in the cp file must be of type integer, but got:{lines[4]}")
+            self._cursor_pk = int(lines[4])
+        # partition names
+        for i in range(5, line_count):
+            self._partition_names.append(lines[i])
+
+    def need_init_mvcc_ts(self):
+        if not (self._need_save_cp and self._load_from_cp_file):
+            return True
+        return False
+
+    def save_mvcc_ts(self, session_ts: int):
+        if self._need_save_cp and not self._load_from_cp_file:
+            self._mvcc_ts = session_ts
+
+    def load_cp_from_file(self):
+        return self._need_save_cp and self._load_from_cp_file
+
+    def mvcc_ts(self):
+        return self._mvcc_ts
 
 class QueryIterator:
     def __init__(
@@ -106,8 +190,9 @@ class QueryIterator:
         self.__set_up_expr(expr)
         self._next_id = None
         self._cache_id_in_use = NO_CACHE_ID
+        self._cp_cursor_line_number = 0
         self._cp_file_handler = None
-        self.__set_up_ts_cp()
+        self.__handle_cp()
         self.__seek_to_offset()
 
     def __seek_to_offset(self):
@@ -139,14 +224,39 @@ class QueryIterator:
             ) from ose
         return mode == "r+"
 
+    def __check_cp_file_handler(self):
+        if self._cp_file_handler is None:
+            raise MilvusException(
+                message=f"Cp file handler cannot be None if need_save_cp, "
+                        f"there must be sth wrong, cp_file_path:{self._cp_file_path}"
+            )
+
+    def __save_ts_to_cp_file(self):
+        if self._need_save_cp:
+            self.__check_cp_file_handler()
+
+
+
     def __save_cp(self):
         if self._need_save_cp:
-            self._cp_file_handler.seek(0)
-            self._cp_file_handler.truncate()
-            self._cp_file_handler.writelines(str(self._session_ts) + "\n")
-            if self._next_id is not None:
-                self._cp_file_handler.writelines(self._next_id)
-            self._cp_file_handler.flush()
+
+            if self._cp_cursor_line_number < 100:
+                self._cp_file_handler.writelines
+
+
+            try:
+                self._cp_file_handler.seek(0)
+                self._cp_file_handler.truncate()
+                self._cp_file_handler.writelines(str(self._session_ts) + "\n")
+                if self._next_id is not None:
+                    self._cp_file_handler.writelines(str(self._next_id))
+                self._cp_file_handler.flush()
+            except Exception as e:
+                log.warning(f"Failed to save cp for iterator, there may be some modifications towards cp file:{self._cp_file_path}: {e}")
+                raise MilvusException(
+                    message=f"Failed to save cp for iterator:{self._cp_file_path}"
+                ) from e
+
 
     def __check_set_reduce_stop_for_best(self):
         if self._kwargs.get(REDUCE_STOP_FOR_BEST, True):
@@ -166,7 +276,7 @@ class QueryIterator:
     def __set_up_expr(self, expr: str):
         if expr is not None:
             self._expr = expr
-        elif self._pk_str:
+        elif self._pk_is_str_type:
             self._expr = self._pk_field_name + ' != ""'
         else:
             self._expr = self._pk_field_name + " < " + str(INT64_MAX)
@@ -196,40 +306,20 @@ class QueryIterator:
             self._session_ts = fall_back_to_latest_session_ts()
         self._kwargs[GUARANTEE_TIMESTAMP] = self._session_ts
 
-    def __set_up_ts_cp(self):
+    def __handle_cp(self):
         self._cp_file_path = self._kwargs.get(ITERATOR_SESSION_CP_FILE, None)
-        # no input cp_file, set up mvccTs by query request
-        if self._cp_file_path is None:
-            self._need_save_cp = False
+        self._iterator_cp_file = IteratorCpFile(self._cp_file_path, self._pk_is_str_type)
+        assert_info(self._iterator_cp_file is not None, "_iterator_cp_file for query iterator cannot be None!")
+        # check consistency of input parameters
+        if self._iterator_cp_file.load_cp_from_file():
+            self._session_ts = self._iterator_cp_file.mvcc_ts()
+
+        if self._iterator_cp_file.need_init_mvcc_ts():
+            # no input cp_file, set up mvccTs by query request
             self.__setup_ts_by_request()
-        else:
-            self._need_save_cp = True
-            if not self.__init_cp_file_handler():
-                # input cp file is empty, set up mvccTs by query request
-                self.__setup_ts_by_request()
-                self.__save_cp()
-            else:
-                # input cp file is not emtpy, init mvccTs by reading cp file
-                file_size = Path(self._cp_file_path).stat().st_size
-                if file_size > 1024:
-                    raise ParamError(
-                        message="input cp file is too large, exceeding 1kb, "
-                        "this may be a incorrect configuration"
-                    )
-                lines = self._cp_file_handler.readlines()
-                line_count = len(lines)
-                if line_count > 2 or line_count < 1:
-                    raise ParamError(
-                        message=f"line number:{len(lines)} of input cp file is wrong, "
-                        f"which should be one or two"
-                    )
-                try:
-                    self._session_ts = int(lines[0])
-                    self._kwargs[GUARANTEE_TIMESTAMP] = self._session_ts
-                except ValueError as e:
-                    raise ParamError(message=f"cannot parse input cp session_ts:{lines[0]}") from e
-                if line_count == 2:
-                    self._next_id = lines[1].strip()
+            self._iterator_cp_file.save_mvcc_ts(self._session_ts)
+
+
 
     def __maybe_cache(self, result: List):
         if len(result) < 2 * self._kwargs[BATCH_SIZE]:
@@ -285,9 +375,9 @@ class QueryIterator:
         for field in fields:
             if field.get(IS_PRIMARY):
                 if field["type"] == DataType.VARCHAR:
-                    self._pk_str = True
+                    self._pk_is_str_type = True
                 else:
-                    self._pk_str = False
+                    self._pk_is_str_type = False
                 self._pk_field_name = field["name"]
                 break
         if self._pk_field_name is None or self._pk_field_name == "":
@@ -298,7 +388,7 @@ class QueryIterator:
         if self._next_id is None:
             return current_expr
         filtered_pk_str = ""
-        if self._pk_str:
+        if self._pk_is_str_type:
             filtered_pk_str = f'{self._pk_field_name} > "{self._next_id}"'
         else:
             filtered_pk_str = f"{self._pk_field_name} > {self._next_id}"
@@ -314,8 +404,17 @@ class QueryIterator:
     def close(self) -> None:
         # release cache in use
         iterator_cache.release_cache(self._cache_id_in_use)
-        if self._cp_file_handler is not None:
-            self._cp_file_handler.close()
+        try:
+            if self._cp_file_handler is not None:
+                self._cp_file_handler.close()
+                file_path = Path(self._cp_file_path)
+                if not file_path.exists():
+                    log.warning(f"cp file has been removed before close, just ignore this error")
+                else:
+                    file_path.unlink()
+                    log.info(f"Removed cp file:{self._cp_file_path} for iterator")
+        except OSError as ose:
+            raise MilvusException(message=f"error when trying to clear cp file:{self._cp_file_path}") from ose
 
 
 def metrics_positive_related(metrics: str) -> bool:

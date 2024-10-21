@@ -59,6 +59,14 @@ numpy_dtype_str_map = {
 }
 
 
+def is_integer(s: str):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+
 def is_integer_datatype(data_type: DataType):
     return data_type in (DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64)
 

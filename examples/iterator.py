@@ -8,7 +8,7 @@ from pymilvus import (
 )
 import logging
 
-HOST = "localhost"
+HOST = "10.104.9.92"
 PORT = "19530"
 COLLECTION_NAME = "test_iterator"
 USER_ID = "id"
