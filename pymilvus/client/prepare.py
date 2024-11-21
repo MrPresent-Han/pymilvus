@@ -41,6 +41,8 @@ from .constants import (
     JSON_PATH,
     JSON_TYPE,
     PAGE_RETAIN_ORDER_FIELD,
+    QUERY_GROUP_BY_FIELDS,
+    QUERY_GROUP_BY_IGNORE_NULL_KEYS,
     RANK_GROUP_SCORER,
     REDUCE_STOP_FOR_BEST,
     STRICT_CAST,
@@ -2038,6 +2040,31 @@ class Prepare:
         req.query_params.append(
             common_types.KeyValuePair(key=REDUCE_STOP_FOR_BEST, value=str(stop_reduce_for_best))
         )
+
+        # parse query group-by fields
+        query_group_by_fields = kwargs.get(QUERY_GROUP_BY_FIELDS, [])
+        if not isinstance(query_group_by_fields, list):
+            raise TypeError("group_by_fields must be a list")
+        if len(query_group_by_fields) > 0:
+            query_group_by_fields_str = ",".join(query_group_by_fields)
+            req.query_params.append(
+                common_types.KeyValuePair(key=QUERY_GROUP_BY_FIELDS, value=query_group_by_fields_str)
+            )
+
+        # parse ignoreNullKeys
+        query_group_ignore_null_keys = kwargs.get(QUERY_GROUP_BY_IGNORE_NULL_KEYS)
+        if query_group_ignore_null_keys:
+            lowered = query_group_ignore_null_keys.strip().lower()
+            if lowered in ['true', 'false']:
+                req.query_params.append(
+                    common_types.KeyValuePair(key=QUERY_GROUP_BY_IGNORE_NULL_KEYS, value=lowered)
+                )
+            else:
+                raise ParamError(
+                    message=f"{QUERY_GROUP_BY_IGNORE_NULL_KEYS} must be one of ['True', 'true', 'False', 'false'], "
+                            f"but got: {query_group_ignore_null_keys}"
+                )
+
         return req
 
     @classmethod

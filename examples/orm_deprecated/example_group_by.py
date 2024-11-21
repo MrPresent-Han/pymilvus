@@ -12,7 +12,7 @@ IP = "localhost"
 connections.connect("default", host=IP, port="19530")
 
 dim = 128
-clean_exist = False
+clean_exist = True
 prepare_data = True
 
 fields = [
@@ -29,8 +29,8 @@ if clean_exist and utility.has_collection(collection_name):
     utility.drop_collection(collection_name)
 
 collection = Collection(collection_name, schema=schema)
-nb = 1500
-batch_num = 3
+nb = 25000
+batch_num = 1
 vectors = [[random.random() for _ in range(dim)] for _ in range(nb)]
 # insert data
 if prepare_data:
@@ -47,13 +47,16 @@ if prepare_data:
         print("insert data done")
         collection.flush()
     collection.create_index("float_vector", {"metric_type": "COSINE"})
+    collection.create_index("int64")
+    collection.create_index("bool")
+    print("insert and index done")
 
 # create collection and load
 collection.load()
 batch_size = 100
 search_params = {"metric_type": "COSINE"}
 result = collection.search(vectors[:3], "float_vector", search_params, limit=batch_size, timeout=600,
-                           output_fields=["int64"], group_by_field="string") #set up group_by_field
+                           output_fields=["string"], group_by_field="string") #set up group_by_field
 
 for i in range(len(result)):
     resultI = result[i]
