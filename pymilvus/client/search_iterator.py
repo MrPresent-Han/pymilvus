@@ -11,6 +11,7 @@ from pymilvus.client.constants import (
     ITER_SEARCH_LAST_BOUND_KEY,
     ITER_SEARCH_V2_KEY,
     ITERATOR_FIELD,
+    COLLECTION_ID,
 )
 from pymilvus.exceptions import ExceptionsMessage, ParamError, ServerVersionIncompatibleException
 from pymilvus.orm.connections import Connections
@@ -50,6 +51,8 @@ class SearchIteratorV2:
             self._left_res_cnt = limit
 
         self._conn = connection
+        self.__set_up_collection_id(collection_name)
+        kwargs[COLLECTION_ID] = self._collection_id
         self._params = {
             "collection_name": collection_name,
             "data": data,
@@ -70,6 +73,10 @@ class SearchIteratorV2:
         # this raises MilvusException if the server does not support V2
         self._saved_first_res = self.next()
         self._is_saved = True
+
+    def __set_up_collection_id(self, collection_name: str):
+        res = self._conn.describe_collection(collection_name)
+        self._collection_id = res["collection_id"]
 
     def next(self):
         # for compatibility
