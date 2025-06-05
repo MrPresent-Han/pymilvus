@@ -1712,7 +1712,12 @@ class GrpcHandler:
             collection_name, expr, output_fields, partition_names, **kwargs
         )
 
+        #start_time = time.time()
         response = self._stub.Query(request, timeout=timeout, metadata=_api_level_md(**kwargs))
+        #duration = time.time() - start_time
+        #print(f"hc==Query duration: {duration:.4f} seconds")
+        
+        start_time = time.time()
         if Status.EMPTY_COLLECTION in {response.status.code, response.status.error_code}:
             return []
         check_status(response.status)
@@ -1730,15 +1735,22 @@ class GrpcHandler:
 
         _, dynamic_fields = entity_helper.extract_dynamic_field_from_result(response)
 
-        results = []
-        for index in range(num_entities):
-            entity_row_data = entity_helper.extract_row_data_from_fields_data(
-                response.fields_data, index, dynamic_fields
-            )
-            results.append(entity_row_data)
+        results = [{}] * num_entities
+        for field_data in response.fields_data:
+           entity_helper.extract_array_row_data_v2(field_data, results, dynamic_fields)    
+
+        # results = []
+        # for index in range(num_entities):
+        #     entity_row_data = entity_helper.extract_row_data_from_fields_data(
+        #         response.fields_data, index, dynamic_fields
+        #     )
+        #     results.append(entity_row_data)
 
         extra_dict = get_cost_extra(response.status)
         extra_dict[ITERATOR_SESSION_TS_FIELD] = response.session_ts
+
+        #duration = time.time() - start_time
+        #print(f"hc==Query processing duration: {duration:.4f} seconds")
         return ExtraList(results, extra=extra_dict)
 
     @retry_on_rpc_failure()

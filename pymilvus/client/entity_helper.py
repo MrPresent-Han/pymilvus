@@ -568,6 +568,125 @@ def extract_array_row_data(field_data: Any, index: int):
         return row
     return row
 
+def extract_array_row_data_v2(field_data: Any, 
+                              entity_rows: List[Dict], 
+                              dynamic_output_fields: Optional[List] = None):
+    if field_data.type == DataType.BOOL:    
+        for i in range(len(field_data.scalars.bool_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.bool_data.data[i]
+        return
+    if field_data.type in (DataType.INT8, DataType.INT16, DataType.INT32):
+        for i in range(len(field_data.scalars.int_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.int_data.data[i]
+        return
+    if field_data.type == DataType.INT64:
+        for i in range(len(field_data.scalars.long_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.long_data.data[i]
+        return
+    if field_data.type == DataType.FLOAT:
+        for i in range(len(field_data.scalars.float_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.float_data.data[i]
+        return
+    if field_data.type == DataType.DOUBLE:
+        for i in range(len(field_data.scalars.double_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.double_data.data[i]
+        return
+    if field_data.type == DataType.VARCHAR:
+        for i in range(len(field_data.scalars.string_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.string_data.data[i]
+        return
+    if field_data.type == DataType.JSON:
+        for i in range(len(field_data.scalars.json_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            
+            json_dict = ujson.loads(field_data.scalars.json_data.data[i])
+            if not field_data.is_dynamic:
+                entity_rows[i][field_data.field_name] = json_dict
+                continue
+            if not dynamic_output_fields:
+                entity_rows[i].update(json_dict)
+                continue
+            entity_rows[i].update({k: v for k, v in json_dict.items() if k in dynamic_output_fields})
+        return
+    if field_data.type == DataType.ARRAY:
+        for i in range(len(field_data.scalars.array_data.data)):
+            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+                entity_rows[i][field_data.field_name] = None
+            else:
+                entity_rows[i][field_data.field_name] = field_data.scalars.array_data.data[i]
+        return
+    if field_data.type == DataType.FLOAT_VECTOR:
+        dim = field_data.vectors.dim
+        for i in range(len(field_data.vectors.float_vector.data)//dim):
+            if len(field_data.vectors.float_vector.data) > i * dim:
+                start_pos, end_pos = i * dim, (i + 1) * dim
+                # Here we use numpy.array to convert the float64 values to numpy.float32 values,
+                # and return a list of numpy.float32 to users
+                # By using numpy.array, performance improved by 60% for topk=16384 dim=1536 case.
+                arr = np.array(
+                    field_data.vectors.float_vector.data[start_pos:end_pos], dtype=np.float32
+                )    
+                entity_rows[i][field_data.field_name] = list(arr)
+        return
+    if field_data.type == DataType.BINARY_VECTOR:
+        for i in range(len(field_data.vectors.binary_vector) // (dim // 8)):
+            if len(field_data.vectors.binary_vector) >= i * (dim // 8):
+                start_pos, end_pos = i * (dim // 8), (i + 1) * (dim // 8)
+                entity_rows[i][field_data.field_name] = [
+                    field_data.vectors.binary_vector[start_pos:end_pos]
+                ]
+        return
+    if field_data.type == DataType.BFLOAT16_VECTOR:
+        for i in range(len(field_data.vectors.bfloat16_vector) // (dim * 2)):
+            if len(field_data.vectors.bfloat16_vector) >= i * (dim * 2):
+                start_pos, end_pos = i * (dim * 2), (i + 1) * (dim * 2)
+                entity_rows[i][field_data.field_name] = [
+                    field_data.vectors.bfloat16_vector[start_pos:end_pos]
+                ]
+        return
+    if field_data.type == DataType.FLOAT16_VECTOR:
+        for i in range(len(field_data.vectors.float16_vector) // (dim * 2)):
+            if len(field_data.vectors.float16_vector) >= i * (dim * 2):
+                start_pos, end_pos = i * (dim * 2), (i + 1) * (dim * 2)
+                entity_rows[i][field_data.field_name] = [
+                    field_data.vectors.float16_vector[start_pos:end_pos]
+                ]
+        return
+    if field_data.type == DataType.SPARSE_FLOAT_VECTOR:
+        for i in range(len(field_data.vectors.sparse_float_vector.contents)//dim):
+            entity_rows[i][field_data.field_name] = sparse_parse_single_row(
+                field_data.vectors.sparse_float_vector.contents[i]
+            )
+        return
+    if field_data.type == DataType.INT8_VECTOR:
+        for i in range(len(field_data.vectors.int8_vector)//dim):
+            if len(field_data.vectors.int8_vector) >= i * dim:
+                start_pos, end_pos = i * dim, (i + 1) * dim
+                entity_rows[i][field_data.field_name] = [
+                    field_data.vectors.int8_vector[start_pos:end_pos]
+                ]
+        return
+    if field_data.type == DataType.STRING:
+         raise MilvusException(message="Not support string yet")
 
 # pylint: disable=R1702 (too-many-nested-blocks)
 # pylint: disable=R0915 (too-many-statements)
