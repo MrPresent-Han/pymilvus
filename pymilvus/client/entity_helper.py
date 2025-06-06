@@ -537,6 +537,39 @@ def extract_dynamic_field_from_result(raw: Any):
             dynamic_fields.add(name)
     return dynamic_field_name, dynamic_fields
 
+def extract_array_row_data_v2(field_data: Any, entity_rows: List[Dict], row_count: int):
+    if field_data.scalars.array_data.element_type == DataType.INT64:
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.long_data.data
+    elif field_data.scalars.array_data.element_type == DataType.BOOL:
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.bool_data.data
+    elif field_data.scalars.array_data.element_type in (
+        DataType.INT8,
+        DataType.INT16,
+        DataType.INT32,
+    ):
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.int_data.data
+    elif field_data.scalars.array_data.element_type == DataType.FLOAT:
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.float_data.data
+    elif field_data.scalars.array_data.element_type == DataType.DOUBLE:
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.double_data.data
+    elif field_data.scalars.array_data.element_type in (
+        DataType.STRING,
+        DataType.VARCHAR,
+    ):
+        for i in range(row_count):
+            array = field_data.scalars.array_data.data[i]
+            entity_rows[i][field_data.field_name] = array.string_data.data
+
 
 def extract_array_row_data(field_data: Any, index: int):
     array = field_data.scalars.array_data.data[index]
@@ -561,10 +594,9 @@ def extract_array_row_data(field_data: Any, index: int):
         return array.string_data.data
     return None
 
-def extract_array_row_data_v2(
+def extract_row_data_from_fields_data_v2(
     field_data: Any,
     entity_rows: List[Dict],
-    dynamic_output_fields: Optional[List] = None
 )->bool:
     def assign_scalar(rows, i, key, has_valid, valid_data, value):
         if has_valid and not valid_data[i]:
@@ -585,7 +617,7 @@ def extract_array_row_data_v2(
         data = field_data.scalars.int_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False
 
     if field_data.type == DataType.INT64:
         data = field_data.scalars.long_data.data
@@ -609,21 +641,23 @@ def extract_array_row_data_v2(
         data = field_data.scalars.string_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False    
 
     if field_data.type == DataType.JSON:
         return True
 
     if field_data.type == DataType.ARRAY:
         data = field_data.scalars.array_data.data
-        for i in range(row_count):
-            if has_valid and not field_data.valid_data[i]:
-                entity_rows[i][field_data.field_name] = None
-                continue
-            else:
-                entity_rows[i][field_data.field_name] = extract_array_row_data(field_data, i)
+        extract_array_row_data_v2(field_data, entity_rows, row_count)
         return False
-    if is_vector_type(field_data.type):
+    if field_data.type in (
+        DataType.FLOAT_VECTOR,
+        DataType.FLOAT16_VECTOR,
+        DataType.BFLOAT16_VECTOR,
+        DataType.BINARY_VECTOR,
+        DataType.SPARSE_FLOAT_VECTOR,
+        DataType.INT8_VECTOR
+    ):
         return True
     if field_data.type == DataType.STRING:
          raise MilvusException(message="Not support string yet")

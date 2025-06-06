@@ -1741,12 +1741,12 @@ class GrpcHandler:
         results = [dict.fromkeys(keys) for _ in range(num_entities)]
         lazy_field_data = []
         for field_data in response.fields_data:
-            #field_start = time.time()
-            lazy_extracted = entity_helper.extract_array_row_data_v2(field_data, results, dynamic_fields)
+            field_start = time.time()
+            lazy_extracted = entity_helper.extract_row_data_from_fields_data_v2(field_data, results, num_entities)
             if lazy_extracted:
                 lazy_field_data.append(field_data)
-            #field_duration = time.time() - field_start
-            #print(f"Field {field_data.field_name} extraction duration: {field_duration:.4f} seconds")
+            field_duration = time.time() - field_start
+            print(f"Field {field_data.field_name} extraction duration: {field_duration:.4f} seconds")
         
         #total_duration = time.time() - total_start
         #print(f"Total data extraction duration: {total_duration:.4f} seconds")
@@ -1761,8 +1761,8 @@ class GrpcHandler:
         extra_dict = get_cost_extra(response.status)
         extra_dict[ITERATOR_SESSION_TS_FIELD] = response.session_ts
 
-        #duration = time.time() - start_time
-        #print(f"hc==Query processing duration: {duration:.4f} seconds")
+        duration = time.time() - start_time
+        print(f"hc==Query processing duration: {duration:.4f} seconds")
         return HybridExtraList(lazy_field_data, results, extra=extra_dict, dynamic_fields=dynamic_fields)
 
     @retry_on_rpc_failure()
