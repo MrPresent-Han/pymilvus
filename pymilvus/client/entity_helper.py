@@ -15,7 +15,7 @@ from pymilvus.grpc_gen import schema_pb2 as schema_types
 from pymilvus.settings import Config
 
 from .types import DataType
-from .utils import SciPyHelper, SparseMatrixInputType, SparseRowOutputType
+from .utils import SciPyHelper, SparseMatrixInputType, SparseRowOutputType, is_vector_type
 
 CHECK_STR_ARRAY = True
 
@@ -540,39 +540,32 @@ def extract_dynamic_field_from_result(raw: Any):
 
 def extract_array_row_data(field_data: Any, index: int):
     array = field_data.scalars.array_data.data[index]
-    row = []
     if field_data.scalars.array_data.element_type == DataType.INT64:
-        row.extend(array.long_data.data)
-        return row
+        return array.long_data.data
     if field_data.scalars.array_data.element_type == DataType.BOOL:
-        row.extend(array.bool_data.data)
-        return row
+        return array.bool_data.data
     if field_data.scalars.array_data.element_type in (
         DataType.INT8,
         DataType.INT16,
         DataType.INT32,
     ):
-        row.extend(array.int_data.data)
-        return row
+        return array.int_data.data
     if field_data.scalars.array_data.element_type == DataType.FLOAT:
-        row.extend(array.float_data.data)
-        return row
+        return array.float_data.data
     if field_data.scalars.array_data.element_type == DataType.DOUBLE:
-        row.extend(array.double_data.data)
-        return row
+        return array.double_data.data
     if field_data.scalars.array_data.element_type in (
         DataType.STRING,
         DataType.VARCHAR,
     ):
-        row.extend(array.string_data.data)
-        return row
-    return row
+        return array.string_data.data
+    return None
 
 def extract_array_row_data_v2(
     field_data: Any,
     entity_rows: List[Dict],
     dynamic_output_fields: Optional[List] = None
-):
+)->bool:
     def assign_scalar(rows, i, key, has_valid, valid_data, value):
         if has_valid and not valid_data[i]:
             rows[i][key] = None
@@ -586,7 +579,7 @@ def extract_array_row_data_v2(
         data = field_data.scalars.bool_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False
 
     if field_data.type in (DataType.INT8, DataType.INT16, DataType.INT32):
         data = field_data.scalars.int_data.data
@@ -598,19 +591,19 @@ def extract_array_row_data_v2(
         data = field_data.scalars.long_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False
 
     if field_data.type == DataType.FLOAT:
         data = field_data.scalars.float_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False
 
     if field_data.type == DataType.DOUBLE:
         data = field_data.scalars.double_data.data
         for i in range(row_count):
             assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
+        return False
 
     if field_data.type == DataType.VARCHAR:
         data = field_data.scalars.string_data.data
@@ -619,71 +612,19 @@ def extract_array_row_data_v2(
         return
 
     if field_data.type == DataType.JSON:
-        data = field_data.scalars.json_data.data
-        for i in range(row_count):
-            if has_valid and not field_data.valid_data[i]:
-                entity_rows[i][field_data.field_name] = None
-                continue
-            json_dict = ujson.loads(data[i])
-            if not field_data.is_dynamic:
-                entity_rows[i][field_data.field_name] = json_dict
-            elif not dynamic_output_fields:
-                entity_rows[i].update(json_dict)
-            else:
-                entity_rows[i].update({k: v for k, v in json_dict.items() if k in dynamic_output_fields})
-        return
+        return True
 
     if field_data.type == DataType.ARRAY:
         data = field_data.scalars.array_data.data
         for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
-        return
-    dim = field_data.vectors.dim
-    if field_data.type == DataType.FLOAT_VECTOR:
-        data = field_data.vectors.float_vector.data
-        for i in range(len(data) // dim):
-            start, end = i * dim, (i + 1) * dim
-            entity_rows[i][field_data.field_name] = data[start:end]  # 单次切片 copy
-        return
-
-    if field_data.type == DataType.BINARY_VECTOR:
-        for i in range(len(field_data.vectors.binary_vector) // (dim // 8)):
-            if len(field_data.vectors.binary_vector) >= i * (dim // 8):
-                start_pos, end_pos = i * (dim // 8), (i + 1) * (dim // 8)
-                entity_rows[i][field_data.field_name] = [
-                    field_data.vectors.binary_vector[start_pos:end_pos]
-                ]
-        return
-    if field_data.type == DataType.BFLOAT16_VECTOR:
-        for i in range(len(field_data.vectors.bfloat16_vector) // (dim * 2)):
-            if len(field_data.vectors.bfloat16_vector) >= i * (dim * 2):
-                start_pos, end_pos = i * (dim * 2), (i + 1) * (dim * 2)
-                entity_rows[i][field_data.field_name] = [
-                    field_data.vectors.bfloat16_vector[start_pos:end_pos]
-                ]
-        return
-    if field_data.type == DataType.FLOAT16_VECTOR:
-        for i in range(len(field_data.vectors.float16_vector) // (dim * 2)):
-            if len(field_data.vectors.float16_vector) >= i * (dim * 2):
-                start_pos, end_pos = i * (dim * 2), (i + 1) * (dim * 2)
-                entity_rows[i][field_data.field_name] = [
-                    field_data.vectors.float16_vector[start_pos:end_pos]
-                ]
-        return
-    if field_data.type == DataType.SPARSE_FLOAT_VECTOR:
-        for i in range(len(field_data.vectors.sparse_float_vector.contents)//dim):
-            entity_rows[i][field_data.field_name] = sparse_parse_single_row(
-                field_data.vectors.sparse_float_vector.contents[i]
-            )
-        return
-    if field_data.type == DataType.INT8_VECTOR:
-        for i in range(len(field_data.vectors.int8_vector)//dim):
-            if len(field_data.vectors.int8_vector) >= i * dim:
-                start_pos, end_pos = i * dim, (i + 1) * dim
-                entity_rows[i][field_data.field_name] = [
-                    field_data.vectors.int8_vector[start_pos:end_pos]
-                ]
-        return
+            if has_valid and not field_data.valid_data[i]:
+                entity_rows[i][field_data.field_name] = None
+                continue
+            else:
+                entity_rows[i][field_data.field_name] = extract_array_row_data(field_data, i)
+        return False
+    if is_vector_type(field_data.type):
+        return True
     if field_data.type == DataType.STRING:
          raise MilvusException(message="Not support string yet")
 
