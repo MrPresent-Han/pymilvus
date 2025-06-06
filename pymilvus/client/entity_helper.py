@@ -568,85 +568,84 @@ def extract_array_row_data(field_data: Any, index: int):
         return row
     return row
 
-def extract_array_row_data_v2(field_data: Any, 
-                              entity_rows: List[Dict], 
-                              dynamic_output_fields: Optional[List] = None):
-    if field_data.type == DataType.BOOL:    
-        for i in range(len(field_data.scalars.bool_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.bool_data.data[i]
+def extract_array_row_data_v2(
+    field_data: Any,
+    entity_rows: List[Dict],
+    dynamic_output_fields: Optional[List] = None
+):
+    def assign_scalar(rows, i, key, has_valid, valid_data, value):
+        if has_valid and not valid_data[i]:
+            rows[i][key] = None
+        else:
+            rows[i][key] = value
+
+    row_count = len(entity_rows)
+    has_valid = len(field_data.valid_data) > 0
+
+    if field_data.type == DataType.BOOL:
+        data = field_data.scalars.bool_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type in (DataType.INT8, DataType.INT16, DataType.INT32):
-        for i in range(len(field_data.scalars.int_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.int_data.data[i]
+        data = field_data.scalars.int_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type == DataType.INT64:
-        for i in range(len(field_data.scalars.long_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.long_data.data[i]
+        data = field_data.scalars.long_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type == DataType.FLOAT:
-        for i in range(len(field_data.scalars.float_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.float_data.data[i]
+        data = field_data.scalars.float_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type == DataType.DOUBLE:
-        for i in range(len(field_data.scalars.double_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.double_data.data[i]
+        data = field_data.scalars.double_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type == DataType.VARCHAR:
-        for i in range(len(field_data.scalars.string_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
-            else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.string_data.data[i]
+        data = field_data.scalars.string_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
         return
+
     if field_data.type == DataType.JSON:
-        for i in range(len(field_data.scalars.json_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
+        data = field_data.scalars.json_data.data
+        for i in range(row_count):
+            if has_valid and not field_data.valid_data[i]:
                 entity_rows[i][field_data.field_name] = None
-            
-            json_dict = ujson.loads(field_data.scalars.json_data.data[i])
+                continue
+            json_dict = ujson.loads(data[i])
             if not field_data.is_dynamic:
                 entity_rows[i][field_data.field_name] = json_dict
-                continue
-            if not dynamic_output_fields:
+            elif not dynamic_output_fields:
                 entity_rows[i].update(json_dict)
-                continue
-            entity_rows[i].update({k: v for k, v in json_dict.items() if k in dynamic_output_fields})
-        return
-    if field_data.type == DataType.ARRAY:
-        for i in range(len(field_data.scalars.array_data.data)):
-            if len(field_data.valid_data) > 0 and field_data.valid_data[i] is False:
-                entity_rows[i][field_data.field_name] = None
             else:
-                entity_rows[i][field_data.field_name] = field_data.scalars.array_data.data[i]
+                entity_rows[i].update({k: v for k, v in json_dict.items() if k in dynamic_output_fields})
         return
+
+    if field_data.type == DataType.ARRAY:
+        data = field_data.scalars.array_data.data
+        for i in range(row_count):
+            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        return
+    dim = field_data.vectors.dim
     if field_data.type == DataType.FLOAT_VECTOR:
-        dim = field_data.vectors.dim
-        for i in range(len(field_data.vectors.float_vector.data)//dim):
-            if len(field_data.vectors.float_vector.data) > i * dim:
-                start_pos, end_pos = i * dim, (i + 1) * dim
-                # Here we use numpy.array to convert the float64 values to numpy.float32 values,
-                # and return a list of numpy.float32 to users
-                # By using numpy.array, performance improved by 60% for topk=16384 dim=1536 case.
-                arr = np.array(
-                    field_data.vectors.float_vector.data[start_pos:end_pos], dtype=np.float32
-                )    
-                entity_rows[i][field_data.field_name] = list(arr)
+        data = field_data.vectors.float_vector.data
+        for i in range(len(data) // dim):
+            start, end = i * dim, (i + 1) * dim
+            entity_rows[i][field_data.field_name] = data[start:end]  # 单次切片 copy
         return
+
     if field_data.type == DataType.BINARY_VECTOR:
         for i in range(len(field_data.vectors.binary_vector) // (dim // 8)):
             if len(field_data.vectors.binary_vector) >= i * (dim // 8):

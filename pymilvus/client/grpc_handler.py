@@ -1735,9 +1735,17 @@ class GrpcHandler:
 
         _, dynamic_fields = entity_helper.extract_dynamic_field_from_result(response)
 
-        results = [{}] * num_entities
+        #total_start = time.time()
+        keys = [field_data.field_name for field_data in response.fields_data]
+        results = [dict.fromkeys(keys) for _ in range(num_entities)]
         for field_data in response.fields_data:
-           entity_helper.extract_array_row_data_v2(field_data, results, dynamic_fields)    
+            #field_start = time.time()
+            entity_helper.extract_array_row_data_v2(field_data, results, dynamic_fields)
+            #field_duration = time.time() - field_start
+            #print(f"Field {field_data.field_name} extraction duration: {field_duration:.4f} seconds")
+        
+        #total_duration = time.time() - total_start
+        #print(f"Total data extraction duration: {total_duration:.4f} seconds")
 
         # results = []
         # for index in range(num_entities):
