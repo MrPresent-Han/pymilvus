@@ -1742,7 +1742,7 @@ class GrpcHandler:
         lazy_field_data = []
         for field_data in response.fields_data:
             field_start = time.time()
-            lazy_extracted = entity_helper.extract_row_data_from_fields_data_v2(field_data, results, num_entities)
+            lazy_extracted = entity_helper.extract_row_data_from_fields_data_v2(field_data, results)
             if lazy_extracted:
                 lazy_field_data.append(field_data)
             field_duration = time.time() - field_start

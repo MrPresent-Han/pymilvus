@@ -566,9 +566,9 @@ def extract_array_row_data_v2(field_data: Any, entity_rows: List[Dict], row_coun
         DataType.STRING,
         DataType.VARCHAR,
     ):
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.string_data.data
+        field_name = field_data.field_name
+        data = field_data.scalars.array_data.data
+        [entity_rows[i].update({field_name: data[i].string_data.data}) for i in range(row_count)]
 
 
 def extract_array_row_data(field_data: Any, index: int):
