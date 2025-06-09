@@ -537,38 +537,55 @@ def extract_dynamic_field_from_result(raw: Any):
             dynamic_fields.add(name)
     return dynamic_field_name, dynamic_fields
 
-def extract_array_row_data_v2(field_data: Any, entity_rows: List[Dict], row_count: int):
-    if field_data.scalars.array_data.element_type == DataType.INT64:
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.long_data.data
-    elif field_data.scalars.array_data.element_type == DataType.BOOL:
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.bool_data.data
-    elif field_data.scalars.array_data.element_type in (
+def extract_array_row_data_with_validity(field_data: Any, entity_rows: List[Dict], row_count: int):
+    field_name = field_data.field_name
+    data = field_data.scalars.array_data.data
+    element_type = field_data.scalars.array_data.element_type
+    if element_type == DataType.INT64:
+        [entity_rows[i].__setitem__(field_name, data[i].long_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    elif element_type == DataType.BOOL:
+        [entity_rows[i].__setitem__(field_name, data[i].bool_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    elif element_type in (
         DataType.INT8,
         DataType.INT16,
         DataType.INT32,
     ):
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.int_data.data
-    elif field_data.scalars.array_data.element_type == DataType.FLOAT:
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.float_data.data
-    elif field_data.scalars.array_data.element_type == DataType.DOUBLE:
-        for i in range(row_count):
-            array = field_data.scalars.array_data.data[i]
-            entity_rows[i][field_data.field_name] = array.double_data.data
-    elif field_data.scalars.array_data.element_type in (
+        [entity_rows[i].__setitem__(field_name, data[i].int_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    elif element_type == DataType.FLOAT:
+        [entity_rows[i].__setitem__(field_name, data[i].float_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    elif element_type == DataType.DOUBLE:
+        [entity_rows[i].__setitem__(field_name, data[i].double_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    elif element_type in (
         DataType.STRING,
         DataType.VARCHAR,
     ):
-        field_name = field_data.field_name
-        data = field_data.scalars.array_data.data
-        [entity_rows[i].update({field_name: data[i].string_data.data}) for i in range(row_count)]
+        [entity_rows[i].__setitem__(field_name, data[i].string_data.data if field_data.valid_data[i] else None) for i in range(row_count)]
+    else:
+        raise MilvusException(message=f"Unsupported data type: {element_type}")
+
+def extract_array_row_data_no_validity(field_data: Any, entity_rows: List[Dict], row_count: int):
+    field_name = field_data.field_name
+    data = field_data.scalars.array_data.data
+    element_type = field_data.scalars.array_data.element_type
+    if element_type == DataType.INT64:
+        [entity_rows[i].__setitem__(field_name, data[i].long_data.data) for i in range(row_count)]
+    elif element_type == DataType.BOOL:
+        [entity_rows[i].__setitem__(field_name, data[i].bool_data.data) for i in range(row_count)]
+    elif element_type in (
+        DataType.INT8,
+        DataType.INT16,
+        DataType.INT32,
+    ):
+        [entity_rows[i].__setitem__(field_name, data[i].int_data.data) for i in range(row_count)]
+    elif element_type == DataType.FLOAT:
+        [entity_rows[i].__setitem__(field_name, data[i].float_data.data) for i in range(row_count)]
+    elif element_type == DataType.DOUBLE:
+        [entity_rows[i].__setitem__(field_name, data[i].double_data.data) for i in range(row_count)]
+    elif element_type in (
+        DataType.STRING,
+        DataType.VARCHAR,
+    ):
+        [entity_rows[i].__setitem__(field_name, data[i].string_data.data) for i in range(row_count)]
 
 
 def extract_array_row_data(field_data: Any, index: int):
@@ -598,57 +615,54 @@ def extract_row_data_from_fields_data_v2(
     field_data: Any,
     entity_rows: List[Dict],
 )->bool:
-    def assign_scalar(rows, i, key, has_valid, valid_data, value):
-        if has_valid and not valid_data[i]:
-            rows[i][key] = None
-        else:
-            rows[i][key] = value
-
     row_count = len(entity_rows)
     has_valid = len(field_data.valid_data) > 0
+    field_name = field_data.field_name
+    valid_data = field_data.valid_data
+    def assign_scalar(rows, data):
+        if has_valid:
+            [rows[i].__setitem__(field_name, None if not valid_data[i] else data[i]) for i in range(row_count)]
+        else:
+            [rows[i].__setitem__(field_name, data[i]) for i in range(row_count)]
 
     if field_data.type == DataType.BOOL:
         data = field_data.scalars.bool_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False
 
     if field_data.type in (DataType.INT8, DataType.INT16, DataType.INT32):
         data = field_data.scalars.int_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False
 
     if field_data.type == DataType.INT64:
         data = field_data.scalars.long_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False
 
     if field_data.type == DataType.FLOAT:
         data = field_data.scalars.float_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False
 
     if field_data.type == DataType.DOUBLE:
         data = field_data.scalars.double_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False
 
     if field_data.type == DataType.VARCHAR:
         data = field_data.scalars.string_data.data
-        for i in range(row_count):
-            assign_scalar(entity_rows, i, field_data.field_name, has_valid, field_data.valid_data, data[i])
+        assign_scalar(entity_rows, field_name, data, valid_data)
         return False    
 
     if field_data.type == DataType.JSON:
         return True
 
     if field_data.type == DataType.ARRAY:
-        data = field_data.scalars.array_data.data
-        extract_array_row_data_v2(field_data, entity_rows, row_count)
+        if has_valid:
+            extract_array_row_data_with_validity(field_data, entity_rows, row_count)
+        else:
+            extract_array_row_data_no_validity(field_data, entity_rows, row_count)
         return False
     if field_data.type in (
         DataType.FLOAT_VECTOR,
