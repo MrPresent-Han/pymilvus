@@ -1127,7 +1127,7 @@ class HybridExtraList(list):
 
         row = super().__getitem__(index)
         for field_data in self._lazy_field_data:
-            row[field_data.field_name] = self._extract_lazy_fields(index, field_data, row)
+            self._extract_lazy_fields(index, field_data, row)
         return row
 
     def __str__(self) -> str:
