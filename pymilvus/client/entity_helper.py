@@ -15,7 +15,7 @@ from pymilvus.grpc_gen import schema_pb2 as schema_types
 from pymilvus.settings import Config
 
 from .types import DataType
-from .utils import SciPyHelper, SparseMatrixInputType, SparseRowOutputType, is_vector_type
+from .utils import SciPyHelper, SparseMatrixInputType, SparseRowOutputType, is_vector_type, sparse_parse_single_row
 
 CHECK_STR_ARRAY = True
 
@@ -56,18 +56,6 @@ def entity_is_sparse_matrix(entity: Any):
     except Exception:
         return False
     return True
-
-
-# parses plain bytes to a sparse float vector(SparseRowOutputType)
-def sparse_parse_single_row(data: bytes) -> SparseRowOutputType:
-    if len(data) % 8 != 0:
-        raise ParamError(message=f"The length of data must be a multiple of 8, got {len(data)}")
-
-    return {
-        struct.unpack("I", data[i : i + 4])[0]: struct.unpack("f", data[i + 4 : i + 8])[0]
-        for i in range(0, len(data), 8)
-    }
-
 
 # converts supported sparse matrix to schemapb.SparseFloatArray proto
 def sparse_rows_to_proto(data: SparseMatrixInputType) -> schema_types.SparseFloatArray:
@@ -586,6 +574,8 @@ def extract_array_row_data_no_validity(field_data: Any, entity_rows: List[Dict],
         DataType.VARCHAR,
     ):
         [entity_rows[i].__setitem__(field_name, data[i].string_data.data) for i in range(row_count)]
+    else:
+        raise MilvusException(message=f"Unsupported data type: {element_type}")
 
 
 def extract_array_row_data(field_data: Any, index: int):
@@ -619,40 +609,40 @@ def extract_row_data_from_fields_data_v2(
     has_valid = len(field_data.valid_data) > 0
     field_name = field_data.field_name
     valid_data = field_data.valid_data
-    def assign_scalar(rows, data):
+    def assign_scalar(data):
         if has_valid:
-            [rows[i].__setitem__(field_name, None if not valid_data[i] else data[i]) for i in range(row_count)]
+            [entity_rows[i].__setitem__(field_name, None if not valid_data[i] else data[i]) for i in range(row_count)]
         else:
-            [rows[i].__setitem__(field_name, data[i]) for i in range(row_count)]
+            [entity_rows[i].__setitem__(field_name, data[i]) for i in range(row_count)]
 
     if field_data.type == DataType.BOOL:
         data = field_data.scalars.bool_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False
 
     if field_data.type in (DataType.INT8, DataType.INT16, DataType.INT32):
         data = field_data.scalars.int_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False
 
     if field_data.type == DataType.INT64:
         data = field_data.scalars.long_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False
 
     if field_data.type == DataType.FLOAT:
         data = field_data.scalars.float_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False
 
     if field_data.type == DataType.DOUBLE:
         data = field_data.scalars.double_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False
 
     if field_data.type == DataType.VARCHAR:
         data = field_data.scalars.string_data.data
-        assign_scalar(entity_rows, field_name, data, valid_data)
+        assign_scalar(data)
         return False    
 
     if field_data.type == DataType.JSON:

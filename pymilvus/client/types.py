@@ -1041,12 +1041,12 @@ class HybridExtraList(list):
         lazy_field_data: List[Any],            # lazy extract fields
         *args, 
         extra: Optional[Dict] = None, 
-        dynamic_output_fields: Optional[List] = None,
+        dynamic_fields: Optional[List] = None,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._lazy_field_data = lazy_field_data
-        self._dynamic_output_fields = dynamic_output_fields
+        self._dynamic_fields = dynamic_fields
         self.extra = OmitZeroDict(extra or {})
 
     def _extract_lazy_fields(self, index: int, field_data: Any, row_data: Dict) -> Any:
@@ -1061,39 +1061,46 @@ class HybridExtraList(list):
                 row_data[field_data.field_name] = json_dict
                 return
 
-            if not self._dynamic_output_fields:
+            if not self._dynamic_fields:
                 row_data.update(json_dict)
                 return
-            row_data.update({k: v for k, v in json_dict.items() if k in self._dynamic_output_fields})
+            row_data.update({k: v for k, v in json_dict.items() if k in self._dynamic_fields})
         elif field_data.type == DataType.FLOAT_VECTOR:
             dim = field_data.vectors.dim
-            if len(field_data.vectors.float_vector.data) >= index * dim:
-                start_pos, end_pos = index * dim, (index + 1) * dim
+            start_pos = index * dim
+            end_pos = start_pos + dim
+            if len(field_data.vectors.float_vector.data) >= start_pos:
                 # Here we use numpy.array to convert the float64 values to numpy.float32 values,
                 # and return a list of numpy.float32 to users
                 # By using numpy.array, performance improved by 60% for topk=16384 dim=1536 case.
                 arr = np.array(
                     field_data.vectors.float_vector.data[start_pos:end_pos], dtype=np.float32
                 )
-                row_data[field_data.field_name] = arr
+                row_data[field_data.field_name] = list(arr)
         elif field_data.type == DataType.BINARY_VECTOR:
             dim = field_data.vectors.dim
-            if len(field_data.vectors.binary_vector) >= index * (dim // 8):
-                start_pos, end_pos = index * (dim // 8), (index + 1) * (dim // 8)
+            bytes_per_vector = dim // 8
+            start_pos = index * bytes_per_vector
+            end_pos = start_pos + bytes_per_vector
+            if len(field_data.vectors.binary_vector) >= start_pos:
                 row_data[field_data.field_name] = [
                     field_data.vectors.binary_vector[start_pos:end_pos]
                 ]
         elif field_data.type == DataType.BFLOAT16_VECTOR:
             dim = field_data.vectors.dim
-            if len(field_data.vectors.bfloat16_vector) >= index * (dim * 2):
-                start_pos, end_pos = index * (dim * 2), (index + 1) * (dim * 2)
+            bytes_per_vector = dim * 2
+            start_pos = index * bytes_per_vector
+            end_pos = start_pos + bytes_per_vector   
+            if len(field_data.vectors.bfloat16_vector) >= start_pos:
                 row_data[field_data.field_name] = [
                     field_data.vectors.bfloat16_vector[start_pos:end_pos]
                 ]
         elif field_data.type == DataType.FLOAT16_VECTOR:
             dim = field_data.vectors.dim
-            if len(field_data.vectors.float16_vector) >= index * (dim * 2):
-                start_pos, end_pos = index * (dim * 2), (index + 1) * (dim * 2)
+            bytes_per_vector = dim * 2
+            start_pos = index * bytes_per_vector
+            end_pos = start_pos + bytes_per_vector
+            if len(field_data.vectors.float16_vector) >= start_pos:
                 row_data[field_data.field_name] = [
                     field_data.vectors.float16_vector[start_pos:end_pos]
                 ]
@@ -1103,8 +1110,9 @@ class HybridExtraList(list):
             )
         elif field_data.type == DataType.INT8_VECTOR:
             dim = field_data.vectors.dim
-            if len(field_data.vectors.int8_vector) >= index * dim:
-                start_pos, end_pos = index * dim, (index + 1) * dim
+            start_pos = index * dim
+            end_pos = start_pos + dim
+            if len(field_data.vectors.int8_vector) >= start_pos:
                 row_data[field_data.field_name] = [
                     field_data.vectors.int8_vector[start_pos:end_pos]
                 ]        
