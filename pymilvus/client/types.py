@@ -1127,12 +1127,18 @@ class HybridExtraList(list):
 
         row = super().__getitem__(index)
         for field_data in self._lazy_field_data:
-            row[field_data.field_name] = self._extract_lazy_fields(index, field_data)
+            row[field_data.field_name] = self._extract_lazy_fields(index, field_data, row)
         return row
 
     def __str__(self) -> str:
         preview = [str(self[i]) for i in range(min(10, len(self)))]
         return f"data: {preview}{' ...' if len(self) > 10 else ''}, extra_info: {self.extra}"
+    
+    def materialize(self):
+        for index in range(len(self)):
+            for field_data in self._lazy_field_data:
+                self._extract_lazy_fields(index, field_data, self[index])
+        return self
 
     __repr__ = __str__
 
