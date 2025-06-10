@@ -1048,6 +1048,8 @@ class HybridExtraList(list):
         self._lazy_field_data = lazy_field_data
         self._dynamic_fields = dynamic_fields
         self.extra = OmitZeroDict(extra or {})
+        self._float_vector_np_array = {}
+        self._has_materialized_float_vector = False
 
     def _extract_lazy_fields(self, index: int, field_data: Any, row_data: Dict) -> Any:
 
@@ -1073,10 +1075,10 @@ class HybridExtraList(list):
                 # Here we use numpy.array to convert the float64 values to numpy.float32 values,
                 # and return a list of numpy.float32 to users
                 # By using numpy.array, performance improved by 60% for topk=16384 dim=1536 case.
-                arr = np.array(
-                    field_data.vectors.float_vector.data[start_pos:end_pos], dtype=np.float32
-                )
-                row_data[field_data.field_name] = list(arr)
+                # arr = np.array(
+                #     field_data.vectors.float_vector.data[start_pos:end_pos], dtype=np.float32
+                # )
+                row_data[field_data.field_name] = self._float_vector_np_array[field_data.field_name][start_pos:end_pos]
         elif field_data.type == DataType.BINARY_VECTOR:
             dim = field_data.vectors.dim
             bytes_per_vector = dim // 8
@@ -1124,7 +1126,7 @@ class HybridExtraList(list):
                 row = self[i]
                 results.append(row)
             return results
-
+        self._pre_materialize_float_vector()
         row = super().__getitem__(index)
         for field_data in self._lazy_field_data:
             self._extract_lazy_fields(index, field_data, row)
@@ -1134,9 +1136,18 @@ class HybridExtraList(list):
         preview = [str(self[i]) for i in range(min(10, len(self)))]
         return f"data: {preview}{' ...' if len(self) > 10 else ''}, extra_info: {self.extra}"
     
+    def _pre_materialize_float_vector(self):
+        if self._has_materialized_float_vector:
+            return
+        for field_data in self._lazy_field_data:
+            if field_data.type == DataType.FLOAT_VECTOR:
+                self._float_vector_np_array[field_data.field_name] = np.array(field_data.vectors.float_vector.data, dtype=np.float32)
+        self._has_materialized_float_vector = True
+
     def materialize(self):
-        for index in range(len(self)):
-            for field_data in self._lazy_field_data:
+        self._pre_materialize_float_vector()
+        for field_data in self._lazy_field_data:
+            for index in range(len(self)):
                 self._extract_lazy_fields(index, field_data, self[index])
         return self
 
