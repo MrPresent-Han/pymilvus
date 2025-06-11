@@ -884,8 +884,12 @@ class GrpcHandler:
                 )
                 func = kwargs.get("_callback")
                 return SearchFuture(future, func)
-
+            
+            import time
+            start_time = time.time()
             response = self._stub.Search(request, timeout=timeout, metadata=_api_level_md(**kwargs))
+            total_time = time.time() - start_time
+            print(f"hc==Search RPC time: {total_time:.4f}s")
             check_status(response.status)
             round_decimal = kwargs.get("round_decimal", -1)
             return SearchResult(

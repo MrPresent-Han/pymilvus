@@ -1,12 +1,13 @@
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import ujson
+from google.protobuf.internal import containers as _containers
 
 from pymilvus.client.types import DataType
+from pymilvus.exceptions import MilvusException
 from pymilvus.grpc_gen import common_pb2, schema_pb2
-
+from pymilvus.grpc_gen.schema_pb2 import FieldData
 from . import entity_helper
-
 
 class SearchResult(list):
     """A list[list[dict]] Contains nq * limit results.
@@ -92,6 +93,9 @@ class SearchResult(list):
 
         data = []
         nq_thres = 0
+        import time
+        start_time = time.time()
+        
         for topk in res.topks:
             start, end = nq_thres, nq_thres + topk
             nq_th_fields = self._get_fields_by_range(start, end, res.fields_data)
@@ -106,6 +110,9 @@ class SearchResult(list):
                 )
             )
             nq_thres += topk
+        
+        total_time = time.time() - start_time
+        print(f"hc==Total parse time: {total_time:.4f}s")
         return data
 
     def _get_fields_by_range(
@@ -256,6 +263,63 @@ class SearchResult(list):
         return self._search_iterator_v2_results
 
 
+class HybridHits(list):
+    ids: List[Union[str, int]]
+    distances: List[float]
+
+    def _get_field_data(self, field_data: FieldData):
+        if field_data.type == DataType.BOOL:
+            return field_data.scalars.bool_data.data
+        elif field_data.type == DataType.INT8:
+            return field_data.scalars.int_data.data
+        elif field_data.type == DataType.INT16:
+            return field_data.scalars.int_data.data
+        elif field_data.type == DataType.INT32:
+            return field_data.scalars.int_data.data
+        elif field_data.type == DataType.INT64:
+            return field_data.scalars.long_data.data
+        elif field_data.type == DataType.FLOAT:
+            return field_data.scalars.float_data.data
+        elif field_data.type == DataType.DOUBLE:
+            return field_data.scalars.double_data.data
+        elif field_data.type == DataType.VARCHAR:
+            return field_data.scalars.string_data.data
+        if field_data.type == DataType.JSON:
+            return field_data.scalars.json_data.data
+        elif field_data.type == DataType.ARRAY:
+            return field_data.scalars.array_data.data
+        if field_data.type == DataType.FLOAT_VECTOR:
+            return field_data.vectors.float_vector.data
+        elif field_data.type == DataType.BINARY_VECTOR:
+            return field_data.vectors.binary_vector.data
+        elif field_data.type == DataType.BFLOAT16_VECTOR:
+            return field_data.vectors.bfloat16_vector.data
+        elif field_data.type == DataType.FLOAT16_VECTOR:
+            return field_data.vectors.float16_vector.data
+        elif field_data.type == DataType.INT8_VECTOR:
+            return field_data.vectors.int8_vector.data
+        elif field_data.type == DataType.SPARSE_FLOAT_VECTOR:
+            return field_data.vectors.sparse_float_vector.data
+        else:
+            raise MilvusException(f"Unsupported field type: {field_data.type}")
+
+    def __init__(self, 
+                 start:int, 
+                 end:int, 
+                 all_pks: List[Union[str, int]],
+                 all_scores: List[float],
+                 fieldsData: _containers.RepeatedCompositeFieldContainer[FieldData],
+                 output_fields: List[str],
+                 pk_name: str):
+        top_k_res = [Hit({"id": all_pks[i], "distance": all_scores[i], "entity": {}}, pk_name=pk_name) for i in range(start, end)]
+        for field_data in fieldsData:
+            data = self._get_field_data(field_data)
+            for i in range(start, end):
+                top_k_res[i][field_data.field_name] = data[i]
+
+        super().__init__(top_k_res)
+        return
+        
 class Hits(list):
     """List[Dict] Topk search result with pks, distances, and output fields.
 
