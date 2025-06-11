@@ -98,7 +98,6 @@ class SearchResult(list):
         
         for topk in res.topks:
             start, end = nq_thres, nq_thres + topk
-            #nq_th_fields = self._get_fields_by_range(start, end, res.fields_data)
             data.append(
                 HybridHits(
                     start,
@@ -312,44 +311,35 @@ class HybridHits(list):
                  fieldsData: List[schema_pb2.FieldData],
                  output_fields: List[str],
                  pk_name: str):
-        top_k_res = [Hit({"id": all_pks[i], "distance": all_scores[i], "entity": {}}, pk_name=pk_name) for i in range(start, end)]
-        dynamic_fields = list(set(output_fields) - set(fieldsData))
+        top_k_res = [HybridHit({"id": all_pks[i], "distance": all_scores[i], "entity": {}}, pk_name=pk_name) for i in range(start, end)]
+        #dynamic_fields = list(set(output_fields) - set([field_data.field_name for field_data in fieldsData]))
         for field_data in fieldsData:
             data = self._get_field_data(field_data)
-            for i in range(start, end):
-                entity = top_k_res[i - start]["entity"]
-                if len(data) <= i:
-                    entity[field_data.field_name] = None
-                if field_data.valid_data and len(field_data.valid_data) > i:
-                    if not field_data.valid_data[i]:
-                        entity[field_data.field_name] = None
-                        continue
-                if field_data.type in [DataType.BOOL, DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64, DataType.FLOAT, DataType.DOUBLE, DataType.VARCHAR, DataType.ARRAY]:
-                    entity[field_data.field_name] = data[i]
-                elif field_data.type in [DataType.FLOAT_VECTOR,
-                    DataType.BINARY_VECTOR,
-                    DataType.BFLOAT16_VECTOR,
-                    DataType.FLOAT16_VECTOR,
-                    DataType.INT8_VECTOR]:
-                    dim = field_data.vectors.dim
-                    if field_data.type in [DataType.BINARY_VECTOR]:
-                        dim = dim // 8
-                    elif field_data.type in [DataType.BFLOAT16_VECTOR, DataType.FLOAT16_VECTOR]:
-                        dim = dim * 2
-                    entity[field_data.field_name] = data[i * dim : (i + 1) * dim]
-                elif field_data.type == DataType.SPARSE_FLOAT_VECTOR:
-                    entity[field_data.field_name] = entity_helper.sparse_proto_to_rows(data, i, i + 1)
-                elif field_data.type == DataType.JSON:
-                    json_dict_list = ujson.loads(data[i]) if data[i] is not None else None
-                    if not field_data.is_dynamic:
-                        entity[field_data.field_name] = json_dict_list
-                        continue
-                    if len(dynamic_fields) > 0:
-                        entity.update({k: v for k, v in json_dict_list.items() if k in dynamic_fields})
-                        continue
-                    entity.update(json_dict_list)
+            # entity = top_k_res[i - start]["entity"]
+            # if len(data) <= i:
+            #     entity[field_data.field_name] = None
+            # if field_data.valid_data and len(field_data.valid_data) > i:
+            #     if not field_data.valid_data[i]:
+            #         entity[field_data.field_name] = None
+            #         continue
+            has_valid = len(field_data.valid_data) > 0
+            if field_data.type in [DataType.BOOL, DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64, DataType.FLOAT, DataType.DOUBLE, DataType.VARCHAR, DataType.ARRAY]:
+                if has_valid:
+                    [hit["entity"].__setitem__(field_data.field_name, data[i+start] if field_data.valid_data[i+start] else None) for i, hit in enumerate(top_k_res)]
                 else:
-                    raise MilvusException(f"Unsupported field type: {field_data.type}")
+                    [hit["entity"].__setitem__(field_data.field_name, data[i+start]) for i, hit in enumerate(top_k_res)]
+            elif field_data.type in [DataType.FLOAT_VECTOR,
+                DataType.BINARY_VECTOR,
+                DataType.BFLOAT16_VECTOR,
+                DataType.FLOAT16_VECTOR,
+                DataType.INT8_VECTOR,
+                DataType.SPARSE_FLOAT_VECTOR,
+                DataType.JSON]:
+                for i, hit in enumerate(top_k_res):
+                    hit.set_idx(i + start)
+                    hit.append_lazy_field_data(field_data)
+            else:
+                raise MilvusException(f"Unsupported field type: {field_data.type}")
         super().__init__(top_k_res)
         return
     def __str__(self) -> str:
@@ -454,7 +444,6 @@ class Hits(list):
 
 from collections import UserDict
 
-
 class Hit(UserDict):
     """Enhanced result in dict that can get data in dict[dict]
 
@@ -542,6 +531,50 @@ class Hit(UserDict):
             pass
         return default
 
+class HybridHit(Hit):
+
+    def append_lazy_field_data(self, field_data: schema_pb2.FieldData):
+        self.lazy_field_data[field_data.field_name] = field_data
+
+    def set_idx(self, idx: int):
+        self.idx = idx
+
+    def __init__(self, *args, pk_name: str = "", **kwargs):
+        super().__init__(*args, pk_name=pk_name, **kwargs)
+        self.lazy_field_data = {}
+        self.idx = 0
+
+    def __getitem__(self, key: str):
+        if key in self.data:
+            return self.data[key]
+        if key in self.data["entity"]:
+            return self.data["entity"][key]
+        if key in self.lazy_field_data:
+            field_data = self.lazy_field_data[key]
+            if field_data.type in [DataType.FLOAT_VECTOR,
+                DataType.BINARY_VECTOR,
+                DataType.BFLOAT16_VECTOR,
+                DataType.FLOAT16_VECTOR,
+                DataType.INT8_VECTOR]:
+                dim = field_data.vectors.dim
+                if field_data.type in [DataType.BINARY_VECTOR]:
+                    dim = dim // 8
+                elif field_data.type in [DataType.BFLOAT16_VECTOR, DataType.FLOAT16_VECTOR]:
+                    dim = dim * 2
+                self.data["entity"][key] = field_data.vectors.data[self.idx * dim : (self.idx + 1) * dim]
+                return self.data["entity"][key]
+            elif field_data.type == DataType.SPARSE_FLOAT_VECTOR:
+                self.data["entity"][key] = entity_helper.sparse_proto_to_rows(field_data.vectors.sparse_float_vector, self.idx, self.idx + 1)
+                return self.data["entity"][key]
+            elif field_data.type == DataType.JSON:
+                json_data = field_data.scalars.json_data.data[self.idx]
+                json_dict_list = ujson.loads(json_data) if json_data is not None else None
+                if not field_data.is_dynamic:
+                    self.data["entity"][field_data.field_name] = json_dict_list
+                self.data["entity"].update(json_dict_list)
+                return self.data["entity"][key]
+        raise KeyError(f"Key {key} not found in data or lazy field data")
+                
 
 def extract_array_row_data(
     scalars: List[schema_pb2.ScalarField], element_type: DataType
