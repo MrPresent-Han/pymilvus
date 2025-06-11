@@ -98,13 +98,14 @@ class SearchResult(list):
         
         for topk in res.topks:
             start, end = nq_thres, nq_thres + topk
-            nq_th_fields = self._get_fields_by_range(start, end, res.fields_data)
+            #nq_th_fields = self._get_fields_by_range(start, end, res.fields_data)
             data.append(
-                Hits(
-                    topk,
-                    all_pks[start:end],
-                    all_scores[start:end],
-                    nq_th_fields,
+                HybridHits(
+                    start,
+                    end,
+                    all_pks,
+                    all_scores,
+                    res.fields_data,
                     res.output_fields,
                     _pk_name,
                 )
@@ -316,8 +317,7 @@ class HybridHits(list):
         for field_data in fieldsData:
             data = self._get_field_data(field_data)
             for i in range(start, end):
-                entity = top_k_res[i]["entity"]
-                idx = i - start
+                entity = top_k_res[i - start]["entity"]
                 if len(data) <= i:
                     entity[field_data.field_name] = None
                 if field_data.valid_data and len(field_data.valid_data) > i:
@@ -325,7 +325,7 @@ class HybridHits(list):
                         entity[field_data.field_name] = None
                         continue
                 if field_data.type in [DataType.BOOL, DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64, DataType.FLOAT, DataType.DOUBLE, DataType.VARCHAR, DataType.ARRAY]:
-                    entity[field_data.field_name] = data[idx]
+                    entity[field_data.field_name] = data[i]
                 elif field_data.type in [DataType.FLOAT_VECTOR,
                     DataType.BINARY_VECTOR,
                     DataType.BFLOAT16_VECTOR,
@@ -338,7 +338,7 @@ class HybridHits(list):
                         dim = dim * 2
                     entity[field_data.field_name] = data[i * dim : (i + 1) * dim]
                 elif field_data.type == DataType.SPARSE_FLOAT_VECTOR:
-                    entity[field_data.field_name] = entity_helper.sparse_proto_to_rows(field_data.vectors.sparse_float_vector, i, i + 1)
+                    entity[field_data.field_name] = entity_helper.sparse_proto_to_rows(data, i, i + 1)
                 elif field_data.type == DataType.JSON:
                     json_dict_list = ujson.loads(data[i]) if data[i] is not None else None
                     if not field_data.is_dynamic:
