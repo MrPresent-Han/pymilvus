@@ -308,18 +308,56 @@ class HybridHits(list):
                  end:int, 
                  all_pks: List[Union[str, int]],
                  all_scores: List[float],
-                 fieldsData: _containers.RepeatedCompositeFieldContainer[FieldData],
+                 fieldsData: List[schema_pb2.FieldData],
                  output_fields: List[str],
                  pk_name: str):
         top_k_res = [Hit({"id": all_pks[i], "distance": all_scores[i], "entity": {}}, pk_name=pk_name) for i in range(start, end)]
+        dynamic_fields = list(set(output_fields) - set(fieldsData))
         for field_data in fieldsData:
             data = self._get_field_data(field_data)
             for i in range(start, end):
-                top_k_res[i][field_data.field_name] = data[i]
-
+                entity = top_k_res[i]["entity"]
+                idx = i - start
+                if len(data) <= i:
+                    entity[field_data.field_name] = None
+                if field_data.valid_data and len(field_data.valid_data) > i:
+                    if not field_data.valid_data[i]:
+                        entity[field_data.field_name] = None
+                        continue
+                if field_data.type in [DataType.BOOL, DataType.INT8, DataType.INT16, DataType.INT32, DataType.INT64, DataType.FLOAT, DataType.DOUBLE, DataType.VARCHAR, DataType.ARRAY]:
+                    entity[field_data.field_name] = data[idx]
+                elif field_data.type in [DataType.FLOAT_VECTOR,
+                    DataType.BINARY_VECTOR,
+                    DataType.BFLOAT16_VECTOR,
+                    DataType.FLOAT16_VECTOR,
+                    DataType.INT8_VECTOR]:
+                    dim = field_data.vectors.dim
+                    if field_data.type in [DataType.BINARY_VECTOR]:
+                        dim = dim // 8
+                    elif field_data.type in [DataType.BFLOAT16_VECTOR, DataType.FLOAT16_VECTOR]:
+                        dim = dim * 2
+                    entity[field_data.field_name] = data[i * dim : (i + 1) * dim]
+                elif field_data.type == DataType.SPARSE_FLOAT_VECTOR:
+                    entity[field_data.field_name] = entity_helper.sparse_proto_to_rows(field_data.vectors.sparse_float_vector, i, i + 1)
+                elif field_data.type == DataType.JSON:
+                    json_dict_list = ujson.loads(data[i]) if data[i] is not None else None
+                    if not field_data.is_dynamic:
+                        entity[field_data.field_name] = json_dict_list
+                        continue
+                    if len(dynamic_fields) > 0:
+                        entity.update({k: v for k, v in json_dict_list.items() if k in dynamic_fields})
+                        continue
+                    entity.update(json_dict_list)
+                else:
+                    raise MilvusException(f"Unsupported field type: {field_data.type}")
         super().__init__(top_k_res)
         return
-        
+    def __str__(self) -> str:
+        """Only print at most 10 query results"""
+        reminder = f" ... and {len(self) - 10} entities remaining" if len(self) > 10 else ""
+        return f"{self[:10]}{reminder}"
+
+    __repr__ = __str__    
 class Hits(list):
     """List[Dict] Topk search result with pks, distances, and output fields.
 
