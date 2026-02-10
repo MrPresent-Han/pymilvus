@@ -32,6 +32,8 @@ HINTS = "hints"
 RANKER_TYPE_RRF = "rrf"
 RANKER_TYPE_WEIGHTED = "weighted"
 
+PIPELINE_TRACE = "pipeline_trace"
+
 GUARANTEE_TIMESTAMP = "guarantee_timestamp"
 
 IS_EMBEDDING_LIST = "is_embedding_list"

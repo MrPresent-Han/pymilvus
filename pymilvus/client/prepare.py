@@ -42,6 +42,7 @@ from .constants import (
     JSON_TYPE,
     ORDER_BY_FIELDS,
     PAGE_RETAIN_ORDER_FIELD,
+    PIPELINE_TRACE,
     QUERY_GROUP_BY_FIELDS,
     RANK_GROUP_SCORER,
     REDUCE_STOP_FOR_BEST,
@@ -1519,6 +1520,10 @@ class Prepare:
         if strict_group_size is not None:
             search_params[STRICT_GROUP_SIZE] = strict_group_size
 
+        pipeline_trace = kwargs.get(PIPELINE_TRACE)
+        if pipeline_trace is not None:
+            search_params[PIPELINE_TRACE] = str(pipeline_trace).lower()
+
         order_by_fields = kwargs.get(ORDER_BY_FIELDS)
         if order_by_fields is not None:
             # Convert list of dict to field_name:direction format, separated by comma
@@ -1732,6 +1737,15 @@ class Prepare:
                 [
                     common_types.KeyValuePair(
                         key=STRICT_GROUP_SIZE, value=utils.dumps(kwargs.get(STRICT_GROUP_SIZE))
+                    )
+                ]
+            )
+
+        if kwargs.get(PIPELINE_TRACE) is not None:
+            request.rank_params.extend(
+                [
+                    common_types.KeyValuePair(
+                        key=PIPELINE_TRACE, value=str(kwargs.get(PIPELINE_TRACE)).lower()
                     )
                 ]
             )
@@ -2110,6 +2124,19 @@ class Prepare:
             req.query_params.append(
                 common_types.KeyValuePair(
                     key=QUERY_GROUP_BY_FIELDS, value=query_group_by_fields_str
+                )
+            )
+
+        # parse query order-by fields
+        query_order_by = kwargs.get("order_by", [])
+        if not isinstance(query_order_by, list):
+            msg = "order_by must be a list"
+            raise TypeError(msg)
+        if len(query_order_by) > 0:
+            query_order_by_str = ",".join(query_order_by)
+            req.query_params.append(
+                common_types.KeyValuePair(
+                    key=ORDER_BY_FIELDS, value=query_order_by_str
                 )
             )
 
