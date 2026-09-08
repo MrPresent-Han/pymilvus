@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pymilvus import AnnSearchRequest, RRFRanker
 from pymilvus.client.cache import GlobalCache
+from pymilvus.client.call_context import CallContext
 from pymilvus.exceptions import AmbiguousIndexName, MilvusException
 from pymilvus.grpc_gen import common_pb2
 from pymilvus.grpc_gen import milvus_pb2 as milvus_types
@@ -58,6 +59,38 @@ class TestGrpcHandlerUtilityOps:
         handler._stub.GetCompactionStateWithPlans.return_value = mock_resp
         result = handler.get_compaction_plans(123)
         assert result is not None
+
+    def test_get_compaction_tasks(self, handler):
+        handler._stub.GetCompactionStateWithPlans.return_value = (
+            milvus_types.GetCompactionPlansResponse(
+                status=common_pb2.Status(error_code=common_pb2.Success),
+                state=common_pb2.Completed,
+                mergeInfos=[
+                    milvus_types.CompactionMergeInfo(
+                        sources=[1, 2],
+                        target=3,
+                        plan_id=10,
+                        trigger_id=20,
+                        collection_id=30,
+                        partition_id=40,
+                        channel="ch",
+                        type="MixCompaction",
+                        state="completed",
+                        targets=[3, 4],
+                    ),
+                    milvus_types.CompactionMergeInfo(sources=[5, 6], target=7),
+                ],
+            )
+        )
+        result = handler.get_compaction_tasks("coll", context=CallContext(db_name="test_db"))
+        request = handler._stub.GetCompactionStateWithPlans.call_args.args[0]
+        assert request.db_name == "test_db"
+        assert request.collection_name == "coll"
+        assert result.collection_name == "coll"
+        assert result.plans[0].task_id == 10
+        assert result.plans[0].targets == [3, 4]
+        assert result.plans[0].state == "completed"
+        assert result.plans[1].targets == [7]
 
     def test_get_server_version(self, handler):
         handler._stub.GetVersion.return_value = make_response(version="v2.4.0")
@@ -182,14 +215,26 @@ class TestGrpcHandlerSegmentOps:
     def test_get_query_segment_info(self, handler):
         mock_seg = MagicMock(segmentID=1, collectionID=100)
         handler._stub.GetQuerySegmentInfo.return_value = make_response(infos=[mock_seg])
-        handler.get_query_segment_info("coll")
+        handler.get_query_segment_info("coll", context=CallContext(db_name="test_db"))
         handler._stub.GetQuerySegmentInfo.assert_called_once()
+        request = handler._stub.GetQuerySegmentInfo.call_args.args[0]
+        assert request.dbName == "test_db"
 
     def test_get_persistent_segment_infos(self, handler):
         mock_seg = MagicMock(segmentID=1, num_rows=1000)
         handler._stub.GetPersistentSegmentInfo.return_value = make_response(infos=[mock_seg])
-        handler.get_persistent_segment_infos("coll")
+        handler.get_persistent_segment_infos(
+            "coll",
+            states=["Growing", "Dropped"],
+            context=CallContext(db_name="test_db"),
+        )
         handler._stub.GetPersistentSegmentInfo.assert_called_once()
+        request = handler._stub.GetPersistentSegmentInfo.call_args.args[0]
+        assert request.dbName == "test_db"
+        assert list(request.states) == [
+            common_pb2.SegmentState.Growing,
+            common_pb2.SegmentState.Dropped,
+        ]
 
 
 class TestGrpcHandlerImportExport:

@@ -142,6 +142,7 @@ class MsgType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     AlterCollectionFunction: _ClassVar[MsgType]
     DropCollectionFunction: _ClassVar[MsgType]
     TruncateCollection: _ClassVar[MsgType]
+    SplitShard: _ClassVar[MsgType]
     CreatePartition: _ClassVar[MsgType]
     DropPartition: _ClassVar[MsgType]
     HasPartition: _ClassVar[MsgType]
@@ -260,6 +261,15 @@ class MsgType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     RefreshExternalCollection: _ClassVar[MsgType]
     GetRefreshExternalCollectionProgress: _ClassVar[MsgType]
     ListRefreshExternalCollectionJobs: _ClassVar[MsgType]
+    CreateRowPolicy: _ClassVar[MsgType]
+    DropRowPolicy: _ClassVar[MsgType]
+    ListRowPolicies: _ClassVar[MsgType]
+    UpdateRowPolicy: _ClassVar[MsgType]
+    SetRLSPrincipalTags: _ClassVar[MsgType]
+    GetRLSPrincipalTags: _ClassVar[MsgType]
+    ListRLSPrincipals: _ClassVar[MsgType]
+    DeleteRLSPrincipalTags: _ClassVar[MsgType]
+    GetExportSnapshotState: _ClassVar[MsgType]
 
 class DslType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -386,6 +396,10 @@ class ObjectPrivilege(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PrivilegeUnpinSnapshotData: _ClassVar[ObjectPrivilege]
     PrivilegeRestoreExternalSnapshot: _ClassVar[ObjectPrivilege]
     PrivilegeExportSnapshot: _ClassVar[ObjectPrivilege]
+    PrivilegeSkipRLS: _ClassVar[ObjectPrivilege]
+    PrivilegeViewRLS: _ClassVar[ObjectPrivilege]
+    PrivilegeManageRLS: _ClassVar[ObjectPrivilege]
+    PrivilegeImportBinlog: _ClassVar[ObjectPrivilege]
 
 class StateCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -538,6 +552,7 @@ AddCollectionFunction: MsgType
 AlterCollectionFunction: MsgType
 DropCollectionFunction: MsgType
 TruncateCollection: MsgType
+SplitShard: MsgType
 CreatePartition: MsgType
 DropPartition: MsgType
 HasPartition: MsgType
@@ -656,6 +671,15 @@ AlterCollectionSchema: MsgType
 RefreshExternalCollection: MsgType
 GetRefreshExternalCollectionProgress: MsgType
 ListRefreshExternalCollectionJobs: MsgType
+CreateRowPolicy: MsgType
+DropRowPolicy: MsgType
+ListRowPolicies: MsgType
+UpdateRowPolicy: MsgType
+SetRLSPrincipalTags: MsgType
+GetRLSPrincipalTags: MsgType
+ListRLSPrincipals: MsgType
+DeleteRLSPrincipalTags: MsgType
+GetExportSnapshotState: MsgType
 Dsl: DslType
 BoolExprV1: DslType
 UndefiedState: CompactionState
@@ -764,6 +788,10 @@ PrivilegePinSnapshotData: ObjectPrivilege
 PrivilegeUnpinSnapshotData: ObjectPrivilege
 PrivilegeRestoreExternalSnapshot: ObjectPrivilege
 PrivilegeExportSnapshot: ObjectPrivilege
+PrivilegeSkipRLS: ObjectPrivilege
+PrivilegeViewRLS: ObjectPrivilege
+PrivilegeManageRLS: ObjectPrivilege
+PrivilegeImportBinlog: ObjectPrivilege
 Initializing: StateCode
 Healthy: StateCode
 Abnormal: StateCode
@@ -1197,3 +1225,11 @@ class SearchAggregationSpec(_message.Message):
     sub_aggregation: SearchAggregationSpec
     search_size: int
     def __init__(self, fields: _Optional[_Iterable[str]] = ..., size: _Optional[int] = ..., metrics: _Optional[_Mapping[str, MetricAggSpec]] = ..., order: _Optional[_Iterable[_Union[OrderSpec, _Mapping]]] = ..., top_hits: _Optional[_Union[TopHitsSpec, _Mapping]] = ..., sub_aggregation: _Optional[_Union[SearchAggregationSpec, _Mapping]] = ..., search_size: _Optional[int] = ...) -> None: ...
+
+class IDRange(_message.Message):
+    __slots__ = ("begin", "end")
+    BEGIN_FIELD_NUMBER: _ClassVar[int]
+    END_FIELD_NUMBER: _ClassVar[int]
+    begin: int
+    end: int
+    def __init__(self, begin: _Optional[int] = ..., end: _Optional[int] = ...) -> None: ...

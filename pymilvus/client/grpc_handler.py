@@ -100,6 +100,31 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+def _parse_compaction_plans(
+    response: milvus_types.GetCompactionPlansResponse,
+    compaction_id: int = 0,
+    collection_name: str = "",
+) -> CompactionPlans:
+    plans = CompactionPlans(compaction_id, response.state, collection_name=collection_name)
+    plans.plans = [
+        Plan(
+            list(merge.sources),
+            merge.target,
+            plan_id=merge.plan_id,
+            trigger_id=merge.trigger_id,
+            collection_id=merge.collection_id,
+            partition_id=merge.partition_id,
+            channel=merge.channel,
+            compaction_type=merge.type,
+            state=merge.state,
+            failure_reason=merge.failure_reason,
+            targets=list(merge.targets) or None,
+        )
+        for merge in response.mergeInfos
+    ]
+    return plans
+
+
 class ReconnectHandler:
     def __init__(self, conns: object, connection_name: str, kwargs: object) -> None:
         self.connection_name = connection_name
@@ -1550,7 +1575,10 @@ class GrpcHandler:
         context: Optional[CallContext] = None,
         **kwargs,
     ) -> List[milvus_types.QuerySegmentInfo]:
-        req = Prepare.get_query_segment_info_request(collection_name)
+        req = Prepare.get_query_segment_info_request(
+            collection_name,
+            db_name=context.get_db_name() if context else "",
+        )
         response = self._stub.GetQuerySegmentInfo(
             req, timeout=timeout, metadata=_api_level_md(context)
         )
@@ -2224,9 +2252,14 @@ class GrpcHandler:
         collection_name: str,
         timeout: Optional[float] = None,
         context: Optional[CallContext] = None,
+        states: Optional[Iterable[Union[int, str]]] = None,
         **kwargs,
     ) -> List[milvus_types.PersistentSegmentInfo]:
-        req = Prepare.get_persistent_segment_info_request(collection_name)
+        req = Prepare.get_persistent_segment_info_request(
+            collection_name,
+            states=states,
+            db_name=context.get_db_name() if context else "",
+        )
         response = self._stub.GetPersistentSegmentInfo(
             req, timeout=timeout, metadata=_api_level_md(context)
         )
@@ -2532,11 +2565,25 @@ class GrpcHandler:
         )
         check_status(response.status)
 
-        cp = CompactionPlans(compaction_id, response.state)
+        return _parse_compaction_plans(response, compaction_id=compaction_id)
 
-        cp.plans = [Plan(m.sources, m.target) for m in response.mergeInfos]
-
-        return cp
+    @retry_on_rpc_failure()
+    def get_compaction_tasks(
+        self,
+        collection_name: str,
+        timeout: Optional[float] = None,
+        context: Optional[CallContext] = None,
+        **kwargs,
+    ) -> CompactionPlans:
+        req = Prepare.get_compaction_tasks(
+            collection_name,
+            db_name=context.get_db_name() if context else "",
+        )
+        response = self._stub.GetCompactionStateWithPlans(
+            req, timeout=timeout, metadata=_api_level_md(context)
+        )
+        check_status(response.status)
+        return _parse_compaction_plans(response, collection_name=collection_name)
 
     @retry_on_rpc_failure()
     def get_replicas(
