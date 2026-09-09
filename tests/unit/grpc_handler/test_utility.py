@@ -75,7 +75,8 @@ class TestGrpcHandlerUtilityOps:
                         partition_id=40,
                         channel="ch",
                         type="MixCompaction",
-                        state="completed",
+                        state="cleaned",
+                        failure_reason="DataNode reported compaction failure",
                         targets=[3, 4],
                     ),
                     milvus_types.CompactionMergeInfo(sources=[5, 6], target=7),
@@ -89,7 +90,8 @@ class TestGrpcHandlerUtilityOps:
         assert result.collection_name == "coll"
         assert result.plans[0].task_id == 10
         assert result.plans[0].targets == [3, 4]
-        assert result.plans[0].state == "completed"
+        assert result.plans[0].state == "cleaned"
+        assert result.plans[0].failure_reason == "DataNode reported compaction failure"
         assert result.plans[1].targets == [7]
 
     def test_get_server_version(self, handler):
